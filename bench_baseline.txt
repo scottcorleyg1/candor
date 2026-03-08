@@ -1,0 +1,28 @@
+goos: windows
+goarch: amd64
+pkg: github.com/scottcorleyg1/candor/compiler/tests
+cpu: Intel(R) Xeon(R) E-2276M  CPU @ 2.80GHz
+BenchmarkPipelineAcceptance-12          	  258574	     12667 ns/op	   13352 B/op	     121 allocs/op
+BenchmarkPipelineIndependent10-12       	   64153	     57766 ns/op	   59644 B/op	     576 allocs/op
+BenchmarkPipelineIndependent50-12       	   12385	    287987 ns/op	  249873 B/op	    2670 allocs/op
+BenchmarkPipelineIndependent100-12      	    6181	    577381 ns/op	  609422 B/op	    5280 allocs/op
+BenchmarkPipelineIndependent500-12      	    1053	   3810698 ns/op	 3959868 B/op	   26114 allocs/op
+BenchmarkPipelineIndependent1000-12     	     411	   8397587 ns/op	 7145601 B/op	   52142 allocs/op
+BenchmarkPipelineChain10-12             	   67183	     55564 ns/op	   55649 B/op	     495 allocs/op
+BenchmarkPipelineChain50-12             	   14371	    253552 ns/op	  225765 B/op	    2308 allocs/op
+BenchmarkPipelineChain100-12            	    8362	    476011 ns/op	  428832 B/op	    4567 allocs/op
+BenchmarkPipelineDeepExpr10-12          	  215444	     16033 ns/op	   15930 B/op	     166 allocs/op
+BenchmarkPipelineDeepExpr50-12          	   67246	     52057 ns/op	   51224 B/op	     572 allocs/op
+BenchmarkPipelineDeepExpr100-12         	   33034	    105717 ns/op	  114653 B/op	    1074 allocs/op
+BenchmarkPipelineManyLets10-12          	  166810	     21852 ns/op	   24879 B/op	     200 allocs/op
+BenchmarkPipelineManyLets50-12          	   42247	     85950 ns/op	  102749 B/op	     735 allocs/op
+BenchmarkPipelineManyLets100-12         	   22189	    173033 ns/op	  195330 B/op	    1392 allocs/op
+BenchmarkPipelineManyStructs10-12       	   83784	     48476 ns/op	   53024 B/op	     368 allocs/op
+BenchmarkPipelineManyStructs50-12       	   18930	    189261 ns/op	  222723 B/op	    1660 allocs/op
+BenchmarkPipelineManyStructs100-12      	    9357	    399095 ns/op	  554974 B/op	    3268 allocs/op
+BenchmarkLexOnly100Fns-12               	   17959	    200650 ns/op	  351930 B/op	    1018 allocs/op
+BenchmarkLexParseOnly100Fns-12          	   13287	    269791 ns/op	  454506 B/op	    2233 allocs/op
+BenchmarkLexParseTypeckOnly100Fns-12    	   10000	    352974 ns/op	  506915 B/op	    2462 allocs/op
+BenchmarkFullPipeline100Fns-12          	    6951	    539324 ns/op	  609428 B/op	    5281 allocs/op
+PASS
+ok  	github.com/scottcorleyg1/candor/compiler/tests	80.804s
