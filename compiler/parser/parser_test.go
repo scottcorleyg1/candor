@@ -1,0 +1,407 @@
+// Copyright (c) 2026 Scott W. Corley
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/scottcorleyg1/candor
+
+package parser
+
+import (
+	"testing"
+
+	"github.com/scottcorleyg1/candor/compiler/lexer"
+)
+
+// parse is a test helper: lex + parse src, fatal on any error.
+func parse(t *testing.T, src string) *File {
+	t.Helper()
+	tokens, err := lexer.Tokenize("<test>", src)
+	if err != nil {
+		t.Fatalf("lex error: %v", err)
+	}
+	file, err := Parse("<test>", tokens)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	return file
+}
+
+// parseErr expects a parse error and returns it; fatal if parse succeeds.
+func parseErr(t *testing.T, src string) error {
+	t.Helper()
+	tokens, err := lexer.Tokenize("<test>", src)
+	if err != nil {
+		return err
+	}
+	_, err = Parse("<test>", tokens)
+	if err == nil {
+		t.Fatal("expected parse error, got none")
+	}
+	return err
+}
+
+// ── Acceptance criterion ─────────────────────────────────────────────────────
+
+// TestAcceptanceCriterionProgram verifies that the v0.0.1 target program
+// parses into the correct AST shape end-to-end.
+func TestAcceptanceCriterionProgram(t *testing.T) {
+	src := `
+fn add(a: u32, b: u32) -> u32 { return a + b }
+
+fn main() -> unit {
+    let x = add(1, 2)
+    return unit
+}
+`
+	file := parse(t, src)
+
+	if len(file.Decls) != 2 {
+		t.Fatalf("expected 2 declarations, got %d", len(file.Decls))
+	}
+
+	// ── fn add ────────────────────────────────────────────────────────────
+	addFn, ok := file.Decls[0].(*FnDecl)
+	if !ok {
+		t.Fatal("first decl must be *FnDecl")
+	}
+	if addFn.Name.Lexeme != "add" {
+		t.Errorf("fn name: want 'add', got %q", addFn.Name.Lexeme)
+	}
+	if len(addFn.Params) != 2 {
+		t.Fatalf("fn add: want 2 params, got %d", len(addFn.Params))
+	}
+	if addFn.Params[0].Name.Lexeme != "a" {
+		t.Errorf("param 0: want 'a', got %q", addFn.Params[0].Name.Lexeme)
+	}
+	if addFn.Params[1].Name.Lexeme != "b" {
+		t.Errorf("param 1: want 'b', got %q", addFn.Params[1].Name.Lexeme)
+	}
+	// return type is NamedType("u32")
+	retNamed, ok := addFn.RetType.(*NamedType)
+	if !ok {
+		t.Fatal("fn add return type must be *NamedType")
+	}
+	if retNamed.Name.Lexeme != "u32" {
+		t.Errorf("fn add return type: want 'u32', got %q", retNamed.Name.Lexeme)
+	}
+	// body: single ReturnStmt with BinaryExpr(a + b)
+	if len(addFn.Body.Stmts) != 1 {
+		t.Fatalf("fn add body: want 1 stmt, got %d", len(addFn.Body.Stmts))
+	}
+	retStmt, ok := addFn.Body.Stmts[0].(*ReturnStmt)
+	if !ok {
+		t.Fatal("fn add body[0] must be *ReturnStmt")
+	}
+	binExpr, ok := retStmt.Value.(*BinaryExpr)
+	if !ok {
+		t.Fatal("return value must be *BinaryExpr")
+	}
+	if binExpr.Op.Lexeme != "+" {
+		t.Errorf("binary op: want '+', got %q", binExpr.Op.Lexeme)
+	}
+	leftIdent, ok := binExpr.Left.(*IdentExpr)
+	if !ok || leftIdent.Tok.Lexeme != "a" {
+		t.Errorf("binary left: want IdentExpr('a')")
+	}
+	rightIdent, ok := binExpr.Right.(*IdentExpr)
+	if !ok || rightIdent.Tok.Lexeme != "b" {
+		t.Errorf("binary right: want IdentExpr('b')")
+	}
+
+	// ── fn main ───────────────────────────────────────────────────────────
+	mainFn, ok := file.Decls[1].(*FnDecl)
+	if !ok {
+		t.Fatal("second decl must be *FnDecl")
+	}
+	if mainFn.Name.Lexeme != "main" {
+		t.Errorf("fn name: want 'main', got %q", mainFn.Name.Lexeme)
+	}
+	if len(mainFn.Params) != 0 {
+		t.Errorf("fn main: want 0 params, got %d", len(mainFn.Params))
+	}
+	retUnit, ok := mainFn.RetType.(*NamedType)
+	if !ok || retUnit.Name.Lexeme != "unit" {
+		t.Fatal("fn main return type must be NamedType('unit')")
+	}
+	if len(mainFn.Body.Stmts) != 2 {
+		t.Fatalf("fn main body: want 2 stmts, got %d", len(mainFn.Body.Stmts))
+	}
+	// stmt 0: let x = add(1, 2)
+	letStmt, ok := mainFn.Body.Stmts[0].(*LetStmt)
+	if !ok {
+		t.Fatal("main body[0] must be *LetStmt")
+	}
+	if letStmt.Name.Lexeme != "x" {
+		t.Errorf("let name: want 'x', got %q", letStmt.Name.Lexeme)
+	}
+	callExpr, ok := letStmt.Value.(*CallExpr)
+	if !ok {
+		t.Fatal("let value must be *CallExpr")
+	}
+	callIdent, ok := callExpr.Fn.(*IdentExpr)
+	if !ok || callIdent.Tok.Lexeme != "add" {
+		t.Fatal("call fn must be IdentExpr('add')")
+	}
+	if len(callExpr.Args) != 2 {
+		t.Fatalf("call args: want 2, got %d", len(callExpr.Args))
+	}
+	arg0, ok := callExpr.Args[0].(*IntLitExpr)
+	if !ok || arg0.Tok.Lexeme != "1" {
+		t.Errorf("arg 0: want IntLitExpr('1')")
+	}
+	arg1, ok := callExpr.Args[1].(*IntLitExpr)
+	if !ok || arg1.Tok.Lexeme != "2" {
+		t.Errorf("arg 1: want IntLitExpr('2')")
+	}
+	// stmt 1: return unit
+	retMain, ok := mainFn.Body.Stmts[1].(*ReturnStmt)
+	if !ok {
+		t.Fatal("main body[1] must be *ReturnStmt")
+	}
+	unitIdent, ok := retMain.Value.(*IdentExpr)
+	if !ok || unitIdent.Tok.Lexeme != "unit" {
+		t.Fatal("return value must be IdentExpr('unit')")
+	}
+}
+
+// ── Function declarations ────────────────────────────────────────────────────
+
+func TestFnNoParams(t *testing.T) {
+	file := parse(t, `fn greet() -> unit { return unit }`)
+	if len(file.Decls) != 1 {
+		t.Fatalf("want 1 decl, got %d", len(file.Decls))
+	}
+	fn := file.Decls[0].(*FnDecl)
+	if len(fn.Params) != 0 {
+		t.Errorf("want 0 params, got %d", len(fn.Params))
+	}
+}
+
+func TestFnTrailingComma(t *testing.T) {
+	// Trailing comma in parameter list is allowed
+	parse(t, `fn f(a: u32,) -> u32 { return a }`)
+}
+
+func TestStructDecl(t *testing.T) {
+	file := parse(t, `struct Point { x: f64, y: f64, }`)
+	if len(file.Decls) != 1 {
+		t.Fatalf("want 1 decl, got %d", len(file.Decls))
+	}
+	s, ok := file.Decls[0].(*StructDecl)
+	if !ok {
+		t.Fatal("expected *StructDecl")
+	}
+	if s.Name.Lexeme != "Point" {
+		t.Errorf("struct name: want 'Point', got %q", s.Name.Lexeme)
+	}
+	if len(s.Fields) != 2 {
+		t.Errorf("want 2 fields, got %d", len(s.Fields))
+	}
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+func TestGenericType(t *testing.T) {
+	file := parse(t, `fn f(x: option<u64>) -> result<u64, str> { return ok(x) }`)
+	fn := file.Decls[0].(*FnDecl)
+
+	paramType, ok := fn.Params[0].Type.(*GenericType)
+	if !ok {
+		t.Fatal("param type must be *GenericType")
+	}
+	if paramType.Name.Lexeme != "option" {
+		t.Errorf("generic name: want 'option', got %q", paramType.Name.Lexeme)
+	}
+
+	retType, ok := fn.RetType.(*GenericType)
+	if !ok {
+		t.Fatal("return type must be *GenericType")
+	}
+	if retType.Name.Lexeme != "result" {
+		t.Errorf("return generic: want 'result', got %q", retType.Name.Lexeme)
+	}
+	if len(retType.Params) != 2 {
+		t.Errorf("result params: want 2, got %d", len(retType.Params))
+	}
+}
+
+func TestFnType(t *testing.T) {
+	parse(t, `fn apply(f: fn(u32) -> u32, x: u32) -> u32 { return f(x) }`)
+}
+
+// ── Statements ───────────────────────────────────────────────────────────────
+
+func TestLetWithTypeAnnotation(t *testing.T) {
+	file := parse(t, `fn f() -> unit { let x: u64 = 42 return unit }`)
+	fn := file.Decls[0].(*FnDecl)
+	let := fn.Body.Stmts[0].(*LetStmt)
+	if let.TypeAnn == nil {
+		t.Fatal("expected type annotation")
+	}
+	ann, ok := let.TypeAnn.(*NamedType)
+	if !ok || ann.Name.Lexeme != "u64" {
+		t.Errorf("type annotation: want 'u64'")
+	}
+}
+
+func TestIfElse(t *testing.T) {
+	file := parse(t, `fn f(x: u32) -> u32 { if x > 0 { return x } else { return 0 } }`)
+	fn := file.Decls[0].(*FnDecl)
+	ifStmt, ok := fn.Body.Stmts[0].(*IfStmt)
+	if !ok {
+		t.Fatal("expected *IfStmt")
+	}
+	if ifStmt.Else == nil {
+		t.Fatal("expected else branch")
+	}
+}
+
+func TestIfElseIf(t *testing.T) {
+	parse(t, `fn f(x: i32) -> i32 {
+		if x > 0 { return 1 }
+		else if x < 0 { return -1 }
+		else { return 0 }
+	}`)
+}
+
+func TestLoopBreak(t *testing.T) {
+	file := parse(t, `fn f() -> unit { loop { break } }`)
+	fn := file.Decls[0].(*FnDecl)
+	loopStmt, ok := fn.Body.Stmts[0].(*LoopStmt)
+	if !ok {
+		t.Fatal("expected *LoopStmt")
+	}
+	_, ok = loopStmt.Body.Stmts[0].(*BreakStmt)
+	if !ok {
+		t.Fatal("expected *BreakStmt inside loop")
+	}
+}
+
+// ── Expressions ──────────────────────────────────────────────────────────────
+
+func TestBinaryPrecedenceMulBeforeAdd(t *testing.T) {
+	// 1 + 2 * 3  should parse as  1 + (2 * 3)
+	file := parse(t, `fn f() -> u32 { return 1 + 2 * 3 }`)
+	fn := file.Decls[0].(*FnDecl)
+	ret := fn.Body.Stmts[0].(*ReturnStmt)
+	add, ok := ret.Value.(*BinaryExpr)
+	if !ok || add.Op.Lexeme != "+" {
+		t.Fatal("outer op must be +")
+	}
+	mul, ok := add.Right.(*BinaryExpr)
+	if !ok || mul.Op.Lexeme != "*" {
+		t.Fatal("right of + must be * (higher precedence)")
+	}
+}
+
+func TestBinaryPrecedenceCmpAfterAdd(t *testing.T) {
+	// a + b == c  should parse as  (a + b) == c
+	file := parse(t, `fn f(a: u32, b: u32, c: u32) -> bool { return a + b == c }`)
+	fn := file.Decls[0].(*FnDecl)
+	ret := fn.Body.Stmts[0].(*ReturnStmt)
+	eq, ok := ret.Value.(*BinaryExpr)
+	if !ok || eq.Op.Lexeme != "==" {
+		t.Fatal("outer op must be ==")
+	}
+	_, ok = eq.Left.(*BinaryExpr) // (a + b)
+	if !ok {
+		t.Fatal("left of == must be BinaryExpr (a + b)")
+	}
+}
+
+func TestUnaryNot(t *testing.T) {
+	file := parse(t, `fn f(x: bool) -> bool { return not x }`)
+	fn := file.Decls[0].(*FnDecl)
+	ret := fn.Body.Stmts[0].(*ReturnStmt)
+	u, ok := ret.Value.(*UnaryExpr)
+	if !ok || u.Op.Type != lexer.TokNot {
+		t.Fatal("expected UnaryExpr with 'not'")
+	}
+}
+
+func TestFieldAccess(t *testing.T) {
+	file := parse(t, `fn f(p: Point) -> f64 { return p.x }`)
+	fn := file.Decls[0].(*FnDecl)
+	ret := fn.Body.Stmts[0].(*ReturnStmt)
+	field, ok := ret.Value.(*FieldExpr)
+	if !ok {
+		t.Fatal("expected *FieldExpr")
+	}
+	if field.Field.Lexeme != "x" {
+		t.Errorf("field: want 'x', got %q", field.Field.Lexeme)
+	}
+}
+
+func TestIndexExpr(t *testing.T) {
+	parse(t, `fn f(v: vec<u64>) -> u64 { return v[0] }`)
+}
+
+func TestBoolLiteral(t *testing.T) {
+	file := parse(t, `fn f() -> bool { return true }`)
+	fn := file.Decls[0].(*FnDecl)
+	ret := fn.Body.Stmts[0].(*ReturnStmt)
+	b, ok := ret.Value.(*BoolLitExpr)
+	if !ok || b.Tok.Type != lexer.TokTrue {
+		t.Fatal("expected BoolLitExpr(true)")
+	}
+}
+
+func TestMustExpr(t *testing.T) {
+	src := `
+fn safe_div(a: u64, b: u64) -> result<u64, str> {
+    let v = divide(a, b) must {
+        ok(v)  => v
+        err(e) => return err(e)
+    }
+    return ok(v)
+}
+`
+	file := parse(t, src)
+	fn := file.Decls[0].(*FnDecl)
+	letStmt := fn.Body.Stmts[0].(*LetStmt)
+	must, ok := letStmt.Value.(*MustExpr)
+	if !ok {
+		t.Fatal("let value must be *MustExpr")
+	}
+	if len(must.Arms) != 2 {
+		t.Errorf("must arms: want 2, got %d", len(must.Arms))
+	}
+	// second arm body is ReturnExpr
+	_, ok = must.Arms[1].Body.(*ReturnExpr)
+	if !ok {
+		t.Fatal("second arm body must be *ReturnExpr")
+	}
+}
+
+func TestReferenceExpr(t *testing.T) {
+	parse(t, `fn f(x: u64) -> unit { let r = &x return unit }`)
+}
+
+func TestNestedCalls(t *testing.T) {
+	parse(t, `fn f() -> u64 { return foo(bar(1), baz(2, 3)) }`)
+}
+
+// ── File-scope directives ─────────────────────────────────────────────────────
+
+func TestDirectivesSkipped(t *testing.T) {
+	src := `
+#use effects
+fn f() -> unit { return unit }
+`
+	file := parse(t, src)
+	if len(file.Decls) != 1 {
+		t.Fatalf("expected 1 decl after skipping directive, got %d", len(file.Decls))
+	}
+}
+
+// ── Error cases ───────────────────────────────────────────────────────────────
+
+func TestMissingReturnType(t *testing.T) {
+	parseErr(t, `fn f() { return unit }`)
+}
+
+func TestMissingFnBody(t *testing.T) {
+	parseErr(t, `fn f() -> unit`)
+}
+
+func TestUnexpectedTokenInExpr(t *testing.T) {
+	parseErr(t, `fn f() -> unit { return @ }`)
+}

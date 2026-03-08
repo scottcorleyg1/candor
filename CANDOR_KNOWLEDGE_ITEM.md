@@ -79,23 +79,23 @@ fn main() -> unit {
 
 ### Types
 ```candor
-i8 i16 i32 i64 i128   -- signed integers
-u8 u16 u32 u64 u128   -- unsigned integers
-f32 f64               -- IEEE 754
-bool                  -- true | false only. Never coerces to integer.
-unit                  -- real type, not void
-never                 -- type of non-returning expressions
-option<T>             -- some(v) | none  — replaces null
-result<T, E>          -- ok(v) | err(e)  — replaces exceptions
-secret<T>             -- taint-tracked sensitive value
+i8 i16 i32 i64 i128   ## signed integers
+u8 u16 u32 u64 u128   ## unsigned integers
+f32 f64               ## IEEE 754
+bool                  ## true | false only. Never coerces to integer.
+unit                  ## real type, not void
+never                 ## type of non-returning expressions
+option<T>             ## some(v) | none  — replaces null
+result<T, E>          ## ok(v) | err(e)  — replaces exceptions
+secret<T>             ## taint-tracked sensitive value
 ```
 
 ### Ownership
 ```candor
-let x: u64 = 42           -- owned
-let y = move(x)           -- ownership transfer. x is dead.
-let r: ref<u64> = &y      -- read-only borrow
-let m: refmut<u64> = &y   -- mutable borrow, exclusive
+let x: u64 = 42           ## owned
+let y = move(x)           ## ownership transfer. x is dead.
+let r: ref<u64> = &y      ## read-only borrow
+let m: refmut<u64> = &y   ## mutable borrow, exclusive
 ```
 
 ### Errors — must{} is always required
@@ -109,28 +109,28 @@ let v = divide(10, 2) must {
     ok(v)  => v
     err(e) => return err(e)
 }
--- Silence is a compile error. There are no exceptions.
+## Silence is a compile error. There are no exceptions.
 ```
 
 ### Effects
 ```candor
 fn hash(data: ref<u8>, len: u64) -> u64
-    effects []          -- provably pure
+    effects []          ## provably pure
 { ... }
 
 fn save(r: ref<Record>) -> result<unit, DbError>
     effects [io.write, mem.alloc]
 { ... }
 
--- Effect taxonomy:
--- io   { read | write | read_write }
--- mem  { alloc | free | alloc_free }
--- sys  { call | signal }
--- time { read | sleep }
--- rand { read }
--- net  { call | stream | subscribe | broadcast | probe }
--- crypto { constant_time | zeroize | entropy }
--- panic
+## Effect taxonomy:
+## io   { read | write | read_write }
+## mem  { alloc | free | alloc_free }
+## sys  { call | signal }
+## time { read | sleep }
+## rand { read }
+## net  { call | stream | subscribe | broadcast | probe }
+## crypto { constant_time | zeroize | entropy }
+## panic
 ```
 
 ### Contracts
@@ -148,26 +148,26 @@ fn transfer(src: refmut<Account>, dst: refmut<Account>, amount: u64)
 
 ### Tags (selected)
 ```candor
-@[pure]                              -- effects [] required
-@[idempotent]                        -- calling twice = calling once
-@[retryable(max: 3, backoff: exponential)]  -- requires @[idempotent]
-@[must_use]                          -- return value cannot be discarded
-@[secret]                            -- no log/serialize without declassify()
-@[pii]                               -- taint-tracked PII
-@[source: user_input]                -- taint source
-@[sanitized]                         -- taint cleared
-@[realtime_safe]                     -- no alloc, no block, WCET required
-@[wcet(us: N)]                       -- worst-case execution time contract
-@[isr(vector: N)]                    -- interrupt service routine
-@[opaque_effects]                    -- required on ALL extern C declarations
-@[non_empty] @[sorted] @[unique] @[bounded(N)]  -- collection tags
+@[pure]                              ## effects [] required
+@[idempotent]                        ## calling twice = calling once
+@[retryable(max: 3, backoff: exponential)]  ## requires @[idempotent]
+@[must_use]                          ## return value cannot be discarded
+@[secret]                            ## no log/serialize without declassify()
+@[pii]                               ## taint-tracked PII
+@[source: user_input]                ## taint source
+@[sanitized]                         ## taint cleared
+@[realtime_safe]                     ## no alloc, no block, WCET required
+@[wcet(us: N)]                       ## worst-case execution time contract
+@[isr(vector: N)]                    ## interrupt service routine
+@[opaque_effects]                    ## required on ALL extern C declarations
+@[non_empty] @[sorted] @[unique] @[bounded(N)]  ## collection tags
 ```
 
 ### The #intent Methodology
 ```candor
--- #intent declares WHY a function needs to exist.
--- @[intent] declares WHAT a function does (verified vs contracts).
--- -- comments explain HOW.
+## #intent declares WHY a function needs to exist.
+## @[intent] declares WHAT a function does (verified vs contracts).
+## ## comments explain HOW.
 
 #intent "Provide the single creation point for session tokens.
          No other path should produce a SessionToken."
@@ -182,9 +182,9 @@ fn authenticate(username: str, password: @[secret] str)
 
 ### File Header Convention
 ```candor
--- Copyright (c) 2026 Scott W. Corley
--- SPDX-License-Identifier: Apache-2.0
--- https://github.com/scottcorleyg1/candor
+## Copyright (c) 2026 Scott W. Corley
+## SPDX-License-Identifier: Apache-2.0
+## https://github.com/scottcorleyg1/candor
 ```
 
 ---

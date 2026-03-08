@@ -119,22 +119,22 @@ Go advantages: known language, fast iteration, single static binary output, goro
 ### 4.1 Primitive Types
 
 ```candor
-i8  i16  i32  i64  i128    -- signed integers
-u8  u16  u32  u64  u128    -- unsigned integers
-f32  f64                   -- IEEE 754 floats
-bool                       -- true | false only, never coerces to integer
-unit                       -- real type, not void
-never                      -- type of non-returning functions
+i8  i16  i32  i64  i128    ## signed integers
+u8  u16  u32  u64  u128    ## unsigned integers
+f32  f64                   ## IEEE 754 floats
+bool                       ## true | false only, never coerces to integer
+unit                       ## real type, not void
+never                      ## type of non-returning functions
 ```
 
 ### 4.2 Memory Model
 
 ```candor
-let x: u64 = 42           -- owned value
-let y = move(x)           -- ownership transfer; x is now dead
-let r:  ref<u64>    = &y  -- read-only borrow
-let m:  refmut<u64> = &y  -- mutable borrow, exclusive
-let a:  option<u64> = some(42)  -- explicit nullable
+let x: u64 = 42           ## owned value
+let y = move(x)           ## ownership transfer; x is now dead
+let r:  ref<u64>    = &y  ## read-only borrow
+let m:  refmut<u64> = &y  ## mutable borrow, exclusive
+let a:  option<u64> = some(42)  ## explicit nullable
 let b:  option<u64> = none
 ```
 
@@ -152,7 +152,7 @@ match value {
 
 loop { if condition { break } }
 
--- No exceptions. No goto. No hidden exits.
+## No exceptions. No goto. No hidden exits.
 ```
 
 ### 4.4 Result — Errors as Values
@@ -165,7 +165,7 @@ fn divide(a: u64, b: u64) -> result<u64, DivError> {
 
 let val = divide(10, 2) must {
     ok(v)  => v
-    err(e) => return err(e)   -- must handle both cases, always
+    err(e) => return err(e)   ## must handle both cases, always
 }
 ```
 
@@ -176,10 +176,10 @@ Silence is a compile error. `must{}` is required on every `result<>`. There are 
 ```candor
 let api_key: secret<str> = load_env("API_KEY")
 
--- Compiler enforces:
--- Cannot be printed, logged, or serialized
--- Cannot be passed to functions not tagged @[handles_secret]
--- Requires explicit declassify() to use as raw value
+## Compiler enforces:
+## Cannot be printed, logged, or serialized
+## Cannot be passed to functions not tagged @[handles_secret]
+## Requires explicit declassify() to use as raw value
 ```
 
 ### 4.6 Structs
@@ -190,7 +190,7 @@ struct Point {
     y: f64,
 }
 
--- With invariants (requires contracts layer):
+## With invariants (requires contracts layer):
 struct BoundedCounter
     invariant self.value <= self.max
     invariant self.max > 0
@@ -252,9 +252,9 @@ effect sys  { call | signal }
 effect time { read | sleep }
 effect rand { read }
 effect panic
--- [] = provably pure. The strongest guarantee Candor can give.
+## [] = provably pure. The strongest guarantee Candor can give.
 
--- Reserved for crypto layer:
+## Reserved for crypto layer:
 effect crypto { constant_time | zeroize | entropy }
 ```
 
@@ -274,7 +274,7 @@ effect crypto { constant_time | zeroize | entropy }
 
 ```candor
 fn hash(data: ref<u8>, len: u64) -> u64
-    effects []          -- provably pure
+    effects []          ## provably pure
 { ... }
 
 fn connect(s: refmut<Socket>, port: u16) -> result<unit, NetError>
@@ -289,16 +289,16 @@ A function cannot declare fewer effects than the union of effects of all functio
 ### 4.3 Pure Blocks & Effect Caps
 
 ```candor
--- Pure block: everything inside must be effects []
+## Pure block: everything inside must be effects []
 pure {
-    let h = hash(&data, data.len)   -- ok
-    -- log(h)                       -- COMPILE ERROR: io.write
+    let h = hash(&data, data.len)   ## ok
+    ## log(h)                       ## COMPILE ERROR: io.write
 }
 
--- Cap: restricts maximum effects in a region
+## Cap: restricts maximum effects in a region
 cap [io.read, mem.alloc] {
     let data = fetch(url) must { ... }
-    -- write_log(data)              -- COMPILE ERROR: io.write not in cap
+    ## write_log(data)              ## COMPILE ERROR: io.write not in cap
 }
 ```
 
@@ -307,15 +307,15 @@ cap [io.read, mem.alloc] {
 ### 4.4 Effect Polymorphism
 
 ```candor
--- 'fx' is a compile-time effect variable
+## 'fx' is a compile-time effect variable
 fn map<T, U, fx>(items: ref<vec<T>>, f: fn(ref<T>) -> U effects fx) -> vec<U>
     effects fx
 { ... }
 
--- Pure mapper: map becomes pure
+## Pure mapper: map becomes pure
 let doubled = map(&numbers, fn(x) -> u64 effects [] { x * 2 })
 
--- IO mapper: map inherits io.write
+## IO mapper: map inherits io.write
 let logged  = map(&numbers, fn(x) -> u64 effects [io.write] { log(x); x })
 ```
 
@@ -350,9 +350,9 @@ fn divide(a: u64, b: u64) -> u64
     requires a <= u64.MAX / b
 { return a / b }
 
-divide(100, 0)   -- COMPILE ERROR: requires b != 0 violated
-divide(100, 5)   -- OK: proven statically
-divide(x, y)     -- debug assertion emitted for runtime value
+divide(100, 0)   ## COMPILE ERROR: requires b != 0 violated
+divide(100, 5)   ## OK: proven statically
+divide(x, y)     ## debug assertion emitted for runtime value
 ```
 
 Violating a precondition is always the **caller's fault**.
@@ -366,8 +366,8 @@ fn sort(items: refmut<vec<u64>>) -> unit
     ensures  forall i in 1..items.len: items[i] >= items[i-1]
 { ... }
 
--- old(expr) captures value at function entry. ensures only.
--- result refers to the return value. ensures only.
+## old(expr) captures value at function entry. ensures only.
+## result refers to the return value. ensures only.
 ```
 
 Violating a postcondition is always the **function's fault**.
@@ -382,7 +382,7 @@ struct BoundedCounter
     value: u64,
     max:   u64,
 }
--- Enforced after every mutation. Direct violation = compile error.
+## Enforced after every mutation. Direct violation = compile error.
 ```
 
 ### 2.4 assert — Inline Assertions
@@ -392,10 +392,10 @@ fn process(data: ref<vec<u8>>) -> result<u64, ProcessError>
     effects []
     requires data.len > 0
 {
-    -- ...
+    ## ...
     assert header.version == 1 or header.version == 2
         message: "unsupported protocol version"
-    -- ...
+    ## ...
 }
 ```
 
@@ -408,7 +408,7 @@ fn transfer(src: refmut<Account>, dst: refmut<Account>, amount: u64)
     requires src.balance >= amount
     ensures  ok(unit)  => src.balance == old(src.balance) - amount
                       and dst.balance == old(dst.balance) + amount
-    ensures  err(_)    => src.balance == old(src.balance)  -- rollback guaranteed
+    ensures  err(_)    => src.balance == old(src.balance)  ## rollback guaranteed
                       and dst.balance == old(dst.balance)
 { ... }
 ```
@@ -445,9 +445,9 @@ Tags are structured, machine-readable metadata that bridges the gap between beha
 
 | Kind | Syntax | Difference |
 |------|--------|------------|
-| Comment | `-- safe to retry` | No verification. Can go stale. Compiler ignores it. |
+| Comment | `## safe to retry` | No verification. Can go stale. Compiler ignores it. |
 | Tag | `@[retryable(max: 3)]` | Compiler verifies idempotency. Agents generate retry logic. Never stale. |
-| Comment | `-- never log this` | No enforcement. Depends on discipline. |
+| Comment | `## never log this` | No enforcement. Depends on discipline. |
 | Tag | `@[secret]` | Compiler enforces: no logging, no serialization without declassify. |
 
 ## 2. Tag Categories
@@ -455,31 +455,31 @@ Tags are structured, machine-readable metadata that bridges the gap between beha
 ### 2.1 Behavioral Tags
 
 ```candor
-@[pure]          -- verified: effects [] required
-@[idempotent]    -- verified: calling twice = same ensures as once
-@[deterministic] -- verified: no time.read or rand.read
-@[total]         -- verified: all inputs handled, no panic paths
-@[monotonic]     -- verified: ensures result >= old(result)
+@[pure]          ## verified: effects [] required
+@[idempotent]    ## verified: calling twice = same ensures as once
+@[deterministic] ## verified: no time.read or rand.read
+@[total]         ## verified: all inputs handled, no panic paths
+@[monotonic]     ## verified: ensures result >= old(result)
 ```
 
 ### 2.2 Operational Tags
 
 ```candor
-@[retryable(max: 3, backoff: exponential)]  -- requires @[idempotent]
-@[timeout(ms: 5000)]                        -- policy: documented expectation
-@[rate_limit(calls: 100, per: second)]      -- policy: agent guidance
-@[call_once]                                -- verified: compile error on >1 call
-@[must_use]                                 -- verified: return value cannot be discarded
+@[retryable(max: 3, backoff: exponential)]  ## requires @[idempotent]
+@[timeout(ms: 5000)]                        ## policy: documented expectation
+@[rate_limit(calls: 100, per: second)]      ## policy: agent guidance
+@[call_once]                                ## verified: compile error on >1 call
+@[must_use]                                 ## verified: return value cannot be discarded
 ```
 
 ### 2.3 Data Sensitivity Tags — Taint Tracking
 
 ```candor
-@[secret]              -- no logging, no serialization, requires declassify()
-@[key_material]        -- superset of @[secret], move-only, must zeroize
-@[pii]                 -- no logging without audit, no storage without encryption
-@[source: user_input]  -- taint tracked to sanitization boundary
-@[sanitized]           -- taint cleared, verified via @[sanitizes: user_input]
+@[secret]              ## no logging, no serialization, requires declassify()
+@[key_material]        ## superset of @[secret], move-only, must zeroize
+@[pii]                 ## no logging without audit, no storage without encryption
+@[source: user_input]  ## taint tracked to sanitization boundary
+@[sanitized]           ## taint cleared, verified via @[sanitizes: user_input]
 ```
 
 > **Security by Default:** Taint tracking makes SQL injection, command injection, and path traversal vulnerabilities compile errors, not runtime surprises. The compiler is the security boundary.
@@ -487,11 +487,11 @@ Tags are structured, machine-readable metadata that bridges the gap between beha
 ### 2.4 Structural Tags
 
 ```candor
-@[constructor]               -- return type must be associated struct, invariants satisfied
-@[destructor]                -- takes ownership, must release resources
-@[deprecated(use: 'newFn')] -- warning at all call sites
-@[platform(os: linux)]      -- compile error if called on wrong platform
-@[entry_point]              -- exactly one per binary, compiler enforces uniqueness
+@[constructor]               ## return type must be associated struct, invariants satisfied
+@[destructor]                ## takes ownership, must release resources
+@[deprecated(use: 'newFn')] ## warning at all call sites
+@[platform(os: linux)]      ## compile error if called on wrong platform
+@[entry_point]              ## exactly one per binary, compiler enforces uniqueness
 ```
 
 ### 2.5 Custom Tags
@@ -554,7 +554,7 @@ fn binary_search(items: ref<vec<u64>>, target: u64) -> option<u64>
     ensures  some(idx) => items[idx] == target
     ensures  none => forall i in 0..items.len: items[i] != target
 { ... }
--- Compiler verifies intent claims map to contracts. Conflict = hard error.
+## Compiler verifies intent claims map to contracts. Conflict = hard error.
 ```
 
 ### 2.2 @[explain] — Decision Documentation
@@ -565,8 +565,8 @@ fn binary_search(items: ref<vec<u64>>, target: u64) -> option<u64>
     Timsort is O(n) on sorted input vs O(n log n) for quicksort.
     Benchmark: sort_benchmarks::ingestion_pattern shows 4x improvement.
 "]
--- Compiler verifies 'sort_benchmarks::ingestion_pattern' exists.
--- Stale references are compiler warnings, not silent drift.
+## Compiler verifies 'sort_benchmarks::ingestion_pattern' exists.
+## Stale references are compiler warnings, not silent drift.
 ```
 
 ### 2.3 @[example] — Compiled and Executed as Tests
@@ -579,8 +579,8 @@ fn binary_search(items: ref<vec<u64>>, target: u64) -> option<u64>
 "]
 fn divide(a: u64, b: u64) -> result<u64, DivError>  { ... }
 
--- candorc test compiles and runs these. Failures = test failures.
--- Documentation that cannot go stale: it is also the test suite.
+## candorc test compiles and runs these. Failures = test failures.
+## Documentation that cannot go stale: it is also the test suite.
 ```
 
 ### 2.4 @[warn_if] — Context-Sensitive Usage Warnings
@@ -589,7 +589,7 @@ fn divide(a: u64, b: u64) -> result<u64, DivError>  { ... }
 @[warn_if: "called before comparing for equality with a value that may
             contain uppercase characters — normalize both sides."]
 fn to_lowercase(s: str) -> str  effects []  { ... }
--- Compiler emits advisory warning at misuse call sites.
+## Compiler emits advisory warning at misuse call sites.
 ```
 
 ### 2.5 @[vocabulary] — Domain Term Definitions
@@ -606,7 +606,7 @@ module payments { ... }
 ## 3. The Intent-First Workflow
 
 ```candor
--- STEP 1: Write intent (human or agent)
+## STEP 1: Write intent (human or agent)
 @[intent: "
     Send a message to a user by their ID.
     Fail gracefully if the user does not exist or channel is unavailable.
@@ -615,15 +615,15 @@ module payments { ... }
 fn send_message(user_id: UserId, msg_id: MessageId, body: str)
     -> result<unit, SendError>
 
--- STEP 2: candorc infer-contracts
--- Compiler reads intent, generates contract scaffolding for review.
+## STEP 2: candorc infer-contracts
+## Compiler reads intent, generates contract scaffolding for review.
 
--- STEP 3: candorc infer-impl
--- Agent reads intent + contracts, generates implementation.
+## STEP 3: candorc infer-impl
+## Agent reads intent + contracts, generates implementation.
 
--- STEP 4: candorc build
--- Compiler verifies: implementation satisfies contracts.
--- Compiler verifies: contracts consistent with intent.
+## STEP 4: candorc build
+## Compiler verifies: implementation satisfies contracts.
+## Compiler verifies: contracts consistent with intent.
 ```
 
 ## 4. Toolchain Commands
@@ -657,25 +657,25 @@ Every collection operation that can be proven safe at compile time produces no b
 ### 2.1 vec<T> — Growable Sequence
 
 ```candor
-let nums: vec<u64> = vec.new()           -- effects [mem.alloc]
-let nums: vec<u64> = vec.of(1, 2, 3)     -- effects [mem.alloc]
-let nums: vec<u64> = vec.with_cap(16)    -- pre-allocated
+let nums: vec<u64> = vec.new()           ## effects [mem.alloc]
+let nums: vec<u64> = vec.of(1, 2, 3)     ## effects [mem.alloc]
+let nums: vec<u64> = vec.with_cap(16)    ## pre-allocated
 
-nums.push(42)                -- effects [mem.alloc]: may grow
-let x = nums[2]              -- effects []: bounds checked by contract
-let x = nums.get(2) must {   -- effects []: returns option<T>
+nums.push(42)                ## effects [mem.alloc]: may grow
+let x = nums[2]              ## effects []: bounds checked by contract
+let x = nums.get(2) must {   ## effects []: returns option<T>
     some(v) => v
     none    => return err(OutOfBounds)
 }
-let n = nums.len             -- effects []: O(1)
+let n = nums.len             ## effects []: O(1)
 ```
 
 ### 2.2 map<K, V> — Key-Value Store
 
 ```candor
 let m: map<str, u64> = map.new()
-m.insert("alice", 42)              -- effects [mem.alloc]
-let v = m.get("alice") must {       -- effects []: option<ref<V>>
+m.insert("alice", 42)              ## effects [mem.alloc]
+let v = m.get("alice") must {       ## effects []: option<ref<V>>
     some(r) => r
     none    => return err(Missing)
 }
@@ -685,8 +685,8 @@ let v = m.get("alice") must {       -- effects []: option<ref<V>>
 
 ```candor
 let s: set<str> = set.of("a", "b", "c")
-s.insert("d")                  -- effects [mem.alloc]
-let has = s.contains("b")      -- effects []: bool, O(1)
+s.insert("d")                  ## effects [mem.alloc]
+let has = s.contains("b")      ## effects []: bool, O(1)
 ```
 
 ## 3. Semantic Collection Tags
@@ -710,31 +710,31 @@ let has = s.contains("b")      -- effects []: bool, O(1)
 ## 5. ring<T, N> — The Zero-Allocation Collection
 
 ```candor
--- N is a compile-time constant: no runtime allocation ever
-let buf: ring<u8, 256> = ring.new()   -- effects []: stack allocated
+## N is a compile-time constant: no runtime allocation ever
+let buf: ring<u8, 256> = ring.new()   ## effects []: stack allocated
 
 buf.push(byte) must {
     ok(unit)  => unit
     err(Full) => handle_full()
 }
 
--- Usable in contexts where mem.alloc is prohibited:
+## Usable in contexts where mem.alloc is prohibited:
 cap [] {
     let mut buf: ring<u8, 64> = ring.new()
-    buf.push(0x42)   -- OK: effects []
+    buf.push(0x42)   ## OK: effects []
 }
 ```
 
 ## 6. Effect-Aware Iterators
 
 ```candor
--- Iterator pipeline: effects compose automatically
+## Iterator pipeline: effects compose automatically
 let result = nums
-    .iter()                          -- effects []
+    .iter()                          ## effects []
     .filter(fn(x) -> bool effects [] { x > 10 })
     .map(fn(x) -> u64 effects []    { x * 2 })
-    .collect::<vec<u64>>()           -- effects [mem.alloc]
--- Overall pipeline: effects [mem.alloc]
+    .collect::<vec<u64>>()           ## effects [mem.alloc]
+## Overall pipeline: effects [mem.alloc]
 ```
 
 ---
@@ -755,11 +755,11 @@ The network layer gives Candor a native vocabulary for what remote calls **mean*
 
 ```candor
 effect net {
-    call        -- single request, single response. RPC-style.
-    stream      -- bidirectional ongoing connection. Long-lived.
-    subscribe   -- one-way event stream from remote. Push model.
-    broadcast   -- fire and forget. No response expected.
-    probe       -- lightweight availability check. No payload.
+    call        ## single request, single response. RPC-style.
+    stream      ## bidirectional ongoing connection. Long-lived.
+    subscribe   ## one-way event stream from remote. Push model.
+    broadcast   ## fire and forget. No response expected.
+    probe       ## lightweight availability check. No payload.
 }
 ```
 
@@ -772,10 +772,10 @@ fn load_dashboard_context(user_id: UserId)
     -> result<DashboardContext, NetError>
     effects [net.call, mem.alloc]
 {
-    -- Three @[idempotent] calls with no data dependency:
-    -- Compiler detects: safe to parallelize.
-    -- Emitted binary: three concurrent requests.
-    -- Wall time: max(A, B, C) not A + B + C
+    ## Three @[idempotent] calls with no data dependency:
+    ## Compiler detects: safe to parallelize.
+    ## Emitted binary: three concurrent requests.
+    ## Wall time: max(A, B, C) not A + B + C
 
     let user    = UserService.get_profile(user_id)
     let account = AccountService.get_balance(user_id)
@@ -787,7 +787,7 @@ fn load_dashboard_context(user_id: UserId)
 
     return ok(DashboardContext { user: u, balance: a, notif_count: n })
 }
--- No async/await. No thread management. No explicit join.
+## No async/await. No thread management. No explicit join.
 ```
 
 ## 4. Endpoint Declarations
@@ -840,8 +840,8 @@ let recs = RecsService.fetch(product_id)
     adapt {
         fast   => full(recs)
         normal => full(recs)
-        slow   => partial(recs, 3)  -- lighter payload
-        timeout => cached_fallback(product_id)  -- effects []
+        slow   => partial(recs, 3)  ## lighter payload
+        timeout => cached_fallback(product_id)  ## effects []
     }
 ```
 
@@ -851,14 +851,14 @@ let recs = RecsService.fetch(product_id)
 fn assemble_order_context(order_id: OrderId)
     -> result<OrderContext, NetError>
     effects   [net.call, mem.alloc]
-    budget    ms(800)    -- total wall time allowed
+    budget    ms(800)    ## total wall time allowed
 {
-    -- Compiler distributes budget across parallel calls.
-    -- Budget-exhausted calls return their fallback, not block.
+    ## Compiler distributes budget across parallel calls.
+    ## Budget-exhausted calls return their fallback, not block.
     let order    = OrderService.get(order_id)
     let customer = CustomerService.get(order.customer_id)
     let shipping = ShippingService.get_status(order_id)
-    -- ...
+    ## ...
 }
 ```
 
@@ -867,17 +867,17 @@ fn assemble_order_context(order_id: OrderId)
 ```candor
 endpoint ExternalPartnerAPI {
     base_url:    "https://partner.external.com"
-    trust_level: external   -- all responses tagged @[source: external]
+    trust_level: external   ## all responses tagged @[source: external]
 
     fn get_inventory(sku: str) -> result<InventoryData, ApiError>
         effects [net.call]
 }
 
--- Taint tracking: data from external endpoint must be validated
+## Taint tracking: data from external endpoint must be validated
 let data = ExternalPartnerAPI.get_inventory(sku) must { ... }
-db.insert(data.quantity)  -- COMPILE ERROR: @[source: external] untrusted
-let safe = validate_quantity(data.quantity) must { ... }  -- @[sanitized]
-db.insert(safe)  -- OK
+db.insert(data.quantity)  ## COMPILE ERROR: @[source: external] untrusted
+let safe = validate_quantity(data.quantity) must { ... }  ## @[sanitized]
+db.insert(safe)  ## OK
 ```
 
 ---
@@ -914,11 +914,11 @@ fn read_pressure_sensor(channel: u8) -> result<u16, SensorError>
     ensures   ok(v) => v <= 4095
 { ... }
 
--- Compiler verifies:
--- @[wcet(us: 120)] <= @[deadline(us: 500)]  ✓
--- All called functions also declare @[wcet]  ✓
--- Sum of call-graph WCET <= declared @[wcet] ✓
--- effects does not include mem.alloc         ✓
+## Compiler verifies:
+## @[wcet(us: 120)] <= @[deadline(us: 500)]  ✓
+## All called functions also declare @[wcet]  ✓
+## Sum of call-graph WCET <= declared @[wcet] ✓
+## effects does not include mem.alloc         ✓
 ```
 
 ### 2.1 WCET Units
@@ -962,9 +962,9 @@ fn motor_control_loop(state: refmut<MotorState>) -> unit
 ### 3.1 Priority Inheritance Mutexes
 
 ```candor
--- realtime_mutex<T> uses priority inheritance automatically.
--- Prevents priority inversion structurally.
--- Compiler performs static deadlock detection via lock acquisition graph.
+## realtime_mutex<T> uses priority inheritance automatically.
+## Prevents priority inversion structurally.
+## Compiler performs static deadlock detection via lock acquisition graph.
 let actuator_lock: realtime_mutex<ActuatorState> = realtime_mutex.new(initial)
 
 @[realtime_safe] @[wcet(us: 50)]
@@ -1001,7 +1001,7 @@ fn uart1_rx_handler() -> unit
         err(Full) => overflow_count.fetch_add(1)
     }
 }
--- rx_buffer is ring<u8, 256>: fixed size, effects []
+## rx_buffer is ring<u8, 256>: fixed size, effects []
 ```
 
 ISR-to-task communication uses `ring<T,N>` — the only collection usable from ISR context. Lock-free and allocation-free. ISRs write, tasks read. Ownership transfers through the buffer.
@@ -1046,14 +1046,14 @@ extern fn memcpy(
     n:   u64
 ) -> refmut<u8>
     effects   [mem.alloc_free]
-    @[opaque_effects]              -- required on ALL extern declarations
+    @[opaque_effects]              ## required on ALL extern declarations
     requires  n > 0
     requires  dst != src
     link:     "c"
 
--- @[opaque_effects] means:
--- 'I am declaring what I believe this C function does.
---  The compiler cannot verify this. I take responsibility.'
+## @[opaque_effects] means:
+## 'I am declaring what I believe this C function does.
+##  The compiler cannot verify this. I take responsibility.'
 ```
 
 ### 2.1 The @[opaque_effects] Tag
@@ -1065,9 +1065,9 @@ extern fn memcpy(
 - Triggers a complete trust boundary listing in `--strict` mode
 
 ```candor
--- Security audit — complete trust boundary surface:
+## Security audit — complete trust boundary surface:
 candorc audit --trust-boundaries
--- Returns every @[opaque_effects] site in the codebase.
+## Returns every @[opaque_effects] site in the codebase.
 ```
 
 ### 2.2 Importing C Headers
@@ -1075,10 +1075,10 @@ candorc audit --trust-boundaries
 ```candor
 #import_c_header "openssl/sha.h"
     as_module: crypto_sha
-    trust_level: external   -- all imports are @[opaque_effects]
+    trust_level: external   ## all imports are @[opaque_effects]
 
--- Compiler generates stubs automatically.
--- Programmer refines with known effect information.
+## Compiler generates stubs automatically.
+## Programmer refines with known effect information.
 #refine crypto_sha::SHA256_Init
     effects   [mem.alloc]
     requires  ctx is zeroed
@@ -1108,9 +1108,9 @@ fn hash_bytes(data: ref<u8>, len: u64, out: refmut<u8[32]>) -> i32
 {
     let hash = compute_hash(data, len)
     out.copy_from(hash)
-    return 0   -- C convention: 0 = success
+    return 0   ## C convention: 0 = success
 }
--- Compiler generates: int candor_hash_bytes(const uint8_t*, uint64_t, uint8_t[32]);
+## Compiler generates: int candor_hash_bytes(const uint8_t*, uint64_t, uint8_t[32]);
 ```
 
 ## 4. C-Compatible Memory Layout
@@ -1118,13 +1118,13 @@ fn hash_bytes(data: ref<u8>, len: u64, out: refmut<u8[32]>) -> i32
 ```candor
 #[c_layout]
 struct SensorReading {
-    timestamp:  u64,    -- 8 bytes, offset 0
-    channel:    u8,     -- 1 byte,  offset 8
-    _pad:       u8[3],  -- 3 bytes padding
-    value:      u32,    -- 4 bytes, offset 12
+    timestamp:  u64,    ## 8 bytes, offset 0
+    channel:    u8,     ## 1 byte,  offset 8
+    _pad:       u8[3],  ## 3 bytes padding
+    value:      u32,    ## 4 bytes, offset 12
 }
--- Total: 16 bytes. Layout identical to equivalent C struct.
--- Candor invariants still apply on the Candor side.
+## Total: 16 bytes. Layout identical to equivalent C struct.
+## Candor invariants still apply on the Candor side.
 ```
 
 ## 5. Phase 1 Compiler Bootstrap
@@ -1132,8 +1132,8 @@ struct SensorReading {
 The `candorc` compiler itself uses c_interop to call libc — the compiler demonstrates its own principles from day one.
 
 ```candor
--- Copyright (c) 2026 Scott W. Corley
--- SPDX-License-Identifier: Apache-2.0
+## Copyright (c) 2026 Scott W. Corley
+## SPDX-License-Identifier: Apache-2.0
 
 #intent "Provide a minimal safe wrapper around the libc functions
          needed by the candorc compiler itself."
@@ -1149,8 +1149,8 @@ extern fn exit(code: i32) -> never
     @[opaque_effects]
     link: "c"
 
--- These are the only trust boundaries in the compiler itself.
--- Everything above this level is pure Candor.
+## These are the only trust boundaries in the compiler itself.
+## Everything above this level is pure Candor.
 ```
 
 > **The Go vs. Zig Argument:** In Zig, every `@import("c")` call is the same philosophy as Candor's c_interop — explicit, declared, honest. Writing `candorc` in Zig means the compiler's own architecture demonstrates the principles Candor is built on.
@@ -1172,7 +1172,7 @@ Even with a full layer stack, an AI agent navigating a Candor codebase still fac
 The Semantic Index is a compile-time artifact — a `.csi` file produced automatically alongside the binary during every `candorc build`. It contains vector embeddings of every declaration, generated from the full Semantic IR node of each construct. Zero bytes added to the compiled binary.
 
 ```
--- Every declaration produces a structured embedding:
+## Every declaration produces a structured embedding:
 embedding_input = {
     name:     "send_request",
     effects:  ["io.read", "io.write"],
@@ -1202,9 +1202,9 @@ candorc search --similar-to payments::transfer_funds --top 5
 candorc search --goal "single entry point for session creation"
 
 # Audit queries:
-candorc audit --intent            -- redundancy and alignment check
-candorc audit --trust-boundaries  -- complete @[opaque_effects] list
-candorc audit --realtime          -- WCET coverage and priority inversion risks
+candorc audit --intent            ## redundancy and alignment check
+candorc audit --trust-boundaries  ## complete @[opaque_effects] list
+candorc audit --realtime          ## WCET coverage and priority inversion risks
 ```
 
 ## 4. How Richer Layers Improve the Index
@@ -1243,7 +1243,7 @@ Candor's formal layers reduce the inference cost of understanding any single fun
 
 | Form | Declares | Stripped at Compile | Verified |
 |------|----------|-------------------|---------|
-| `-- comment` | Explanation of implementation | Yes | No |
+| `## comment` | Explanation of implementation | Yes | No |
 | `@[intent: '...']` | What the function does | Yes | Yes — vs. contracts |
 | `#intent '...'` | Why the function needs to exist | Yes | Via audit tool |
 
@@ -1260,9 +1260,9 @@ Code that correctly accomplishes the wrong goal is still wrong. `#intent` makes 
 Every Candor source file:
 
 ```candor
--- Copyright (c) 2026 Scott W. Corley
--- SPDX-License-Identifier: Apache-2.0
--- https://github.com/candor-lang/candor
+## Copyright (c) 2026 Scott W. Corley
+## SPDX-License-Identifier: Apache-2.0
+## https://github.com/candor-lang/candor
 
 #intent "Provide authentication primitives — session creation,
          validation, and revocation. This module is the only

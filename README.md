@@ -26,8 +26,8 @@ This makes Candor unusually well-suited to the way software is being built today
 ## A Taste of Candor
 
 ```candor
--- Copyright (c) 2026 Scott W. Corley
--- SPDX-License-Identifier: Apache-2.0
+## Copyright (c) 2026 Scott W. Corley
+## SPDX-License-Identifier: Apache-2.0
 
 #intent "Transfer funds between two accounts atomically.
          Either both balances change or neither does."
@@ -90,11 +90,11 @@ Every layer is opt-in. A program using only Core is valid, safe, and compilable.
 
 ```candor
 fn hash(data: ref<u8>, len: u64) -> u64
-    effects []          -- provably pure: memoizable, reorderable, parallelizable
+    effects []          ## provably pure: memoizable, reorderable, parallelizable
 { ... }
 
 fn save(record: ref<Record>) -> result<unit, DbError>
-    effects [io.write, mem.alloc]   -- compiler knows exactly what this touches
+    effects [io.write, mem.alloc]   ## compiler knows exactly what this touches
 { ... }
 ```
 
@@ -117,9 +117,9 @@ Contracts proven statically vanish from the binary — they cost nothing at runt
 ```candor
 @[idempotent]
 @[retryable(max: 3, backoff: exponential)]
-@[secret]       -- compiler enforces: no logging, no serialization without declassify()
-@[pii]          -- taint-tracked through entire call graph
-@[realtime_safe] -- no allocation, no blocking, WCET verified
+@[secret]       ## compiler enforces: no logging, no serialization without declassify()
+@[pii]          ## taint-tracked through entire call graph
+@[realtime_safe] ## no allocation, no blocking, WCET verified
 ```
 
 Tags are verified claims grounded in effects and contracts. `@[pure]` requires `effects []`. `@[idempotent]` is verified against `ensures` clauses. `@[secret]` taint-tracks data through the entire call graph. They cannot drift from reality — the compiler enforces them.
@@ -142,14 +142,14 @@ fn get_user_context(user_id: UserId) -> result<UserContext, NetError>
 ### Network Layer — Structural Parallelism
 
 ```candor
--- Three @[idempotent] calls with no data dependency:
--- Compiler emits concurrent requests automatically.
--- No async/await. No thread management. No explicit join.
+## Three @[idempotent] calls with no data dependency:
+## Compiler emits concurrent requests automatically.
+## No async/await. No thread management. No explicit join.
 
-let user    = UserService.get_profile(user_id)    -- net.call
-let account = AccountService.get_balance(user_id) -- net.call
-let notifs  = NotifService.get_count(user_id)     -- net.call
--- Wall time: max(A, B, C) — not A + B + C
+let user    = UserService.get_profile(user_id)    ## net.call
+let account = AccountService.get_balance(user_id) ## net.call
+let notifs  = NotifService.get_count(user_id)     ## net.call
+## Wall time: max(A, B, C) — not A + B + C
 ```
 
 ### Realtime Layer — WCET as a Contract
@@ -158,7 +158,7 @@ let notifs  = NotifService.get_count(user_id)     -- net.call
 @[realtime_safe]
 @[priority(level: control)]
 @[deadline(us: 1000)]
-@[wcet(us: 400)]        -- verified transitively through entire call graph
+@[wcet(us: 400)]        ## verified transitively through entire call graph
 fn motor_control_loop(state: refmut<MotorState>) -> unit
     effects [sys.call]
 ```
