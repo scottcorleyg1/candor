@@ -304,6 +304,47 @@ func TestAssignToImmutable(t *testing.T) {
 		"cannot assign to immutable")
 }
 
+// ── struct field assignment ───────────────────────────────────────────────────
+
+func TestFieldAssign(t *testing.T) {
+	mustCompile(t, `
+struct Point { x: u32, y: u32 }
+fn f(p: Point) -> unit {
+    let mut q: Point = p
+    q.x = 10
+    return unit
+}`)
+}
+
+func TestFieldAssignImmutable(t *testing.T) {
+	mustFail(t, `
+struct Point { x: u32 }
+fn f(p: Point) -> unit {
+    p.x = 10
+    return unit
+}`, "cannot assign to field of immutable")
+}
+
+func TestFieldAssignUnknownField(t *testing.T) {
+	mustFail(t, `
+struct Point { x: u32 }
+fn f(src: Point) -> unit {
+    let mut p: Point = src
+    p.z = 10
+    return unit
+}`, "unknown field")
+}
+
+func TestFieldAssignTypeMismatch(t *testing.T) {
+	mustFail(t, `
+struct Point { x: u32 }
+fn f(src: Point) -> unit {
+    let mut p: Point = src
+    p.x = true
+    return unit
+}`, "type mismatch")
+}
+
 // ── match expression ──────────────────────────────────────────────────────────
 
 func TestMatchOnBool(t *testing.T) {

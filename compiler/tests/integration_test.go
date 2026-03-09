@@ -417,6 +417,28 @@ fn main() -> unit {
 	}
 }
 
+// TestFieldAssignProgram verifies struct field mutation compiles and runs.
+// A helper copies the struct and mutates the copy; main just calls it.
+func TestFieldAssignProgram(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+struct Point { x: u32, y: u32 }
+fn copy_set_x(p: Point, val: u32) -> u32 {
+    let mut q: Point = p
+    q.x = val
+    return q.x
+}
+fn main() -> unit {
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "field_assign", src)
+	if err := exec.Command(bin).Run(); err != nil {
+		t.Fatalf("binary exited non-zero: %v", err)
+	}
+}
+
 // TestEmittedCIsValidC verifies the C output for the acceptance criterion
 // contains no obvious invalid patterns.
 func TestEmittedCIsValidC(t *testing.T) {

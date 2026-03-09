@@ -282,13 +282,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 		return p.parseLoopStmt()
 	case lexer.TokBreak:
 		return &BreakStmt{BreakTok: p.advance()}, nil
-	case lexer.TokIdent:
-		if p.peekAt(1).Type == lexer.TokEq {
-			return p.parseAssignStmt()
-		}
-		return p.parseExprStmt()
 	default:
-		return p.parseExprStmt()
+		return p.parseExprOrAssignStmt()
 	}
 }
 
@@ -336,6 +331,31 @@ func (p *parser) parseAssignStmt() (*AssignStmt, error) {
 		return nil, err
 	}
 	return &AssignStmt{Name: name, Eq: eq, Value: value}, nil
+}
+
+// parseExprOrAssignStmt parses an expression and, if followed by '=',
+// turns it into an assignment statement (variable or field).
+func (p *parser) parseExprOrAssignStmt() (Stmt, error) {
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if !p.check(lexer.TokEq) {
+		return &ExprStmt{X: expr}, nil
+	}
+	eq := p.advance() // consume '='
+	value, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	switch t := expr.(type) {
+	case *IdentExpr:
+		return &AssignStmt{Name: t.Tok, Eq: eq, Value: value}, nil
+	case *FieldExpr:
+		return &FieldAssignStmt{Target: t, Eq: eq, Value: value}, nil
+	default:
+		return nil, p.errorf(eq, "invalid assignment target")
+	}
 }
 
 func (p *parser) parseReturnStmt() (*ReturnStmt, error) {

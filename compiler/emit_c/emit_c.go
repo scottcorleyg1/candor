@@ -377,6 +377,21 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 		}
 		e.writef("%s%s = %s;\n", indent(depth), s.Name.Lexeme, vb.String())
 
+	case *parser.FieldAssignStmt:
+		var recv, val strings.Builder
+		if err := e.emitExpr(s.Target.Receiver, &recv); err != nil {
+			return err
+		}
+		if err := e.emitExpr(s.Value, &val); err != nil {
+			return err
+		}
+		recvType := e.res.ExprTypes[s.Target.Receiver]
+		if gen, ok := recvType.(*typeck.GenType); ok && (gen.Con == "ref" || gen.Con == "refmut") {
+			e.writef("%s%s->%s = %s;\n", ind, recv.String(), s.Target.Field.Lexeme, val.String())
+		} else {
+			e.writef("%s%s.%s = %s;\n", ind, recv.String(), s.Target.Field.Lexeme, val.String())
+		}
+
 	default:
 		return fmt.Errorf("unhandled Stmt %T", stmt)
 	}

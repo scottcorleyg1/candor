@@ -144,6 +144,16 @@ type AssignStmt struct {
 func (s *AssignStmt) Pos() lexer.Token { return s.Name }
 func (s *AssignStmt) stmtNode()        {}
 
+// FieldAssignStmt: receiver.field = value  (receiver must be mutable)
+type FieldAssignStmt struct {
+	Target *FieldExpr
+	Eq     lexer.Token
+	Value  Expr
+}
+
+func (s *FieldAssignStmt) Pos() lexer.Token { return s.Target.Pos() }
+func (s *FieldAssignStmt) stmtNode()        {}
+
 // ── Expressions ──────────────────────────────────────────────────────────────
 
 type Expr interface {

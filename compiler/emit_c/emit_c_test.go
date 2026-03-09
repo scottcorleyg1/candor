@@ -289,6 +289,33 @@ func TestMatchOnBool(t *testing.T) {
 	assertContains(t, out, "if (")
 }
 
+// ── field assignment ──────────────────────────────────────────────────────────
+
+func TestFieldAssign(t *testing.T) {
+	src := `
+struct Point { x: u32, y: u32 }
+fn f(p: Point) -> u32 {
+    let mut q: Point = p
+    q.x = 99
+    return q.x
+}`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "q.x = 99")
+}
+
+func TestFieldAssignRef(t *testing.T) {
+	src := `
+struct Point { x: u32 }
+fn set_x(p: ref<Point>) -> unit {
+    p.x = 7
+    return unit
+}`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "p->x = 7")
+}
+
 func TestMatchOnOption(t *testing.T) {
 	src := `
 fn f(x: option<u32>) -> u32 {

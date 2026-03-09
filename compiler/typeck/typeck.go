@@ -275,6 +275,8 @@ func (c *checker) checkStmt(stmt parser.Stmt, sc *scope, retType Type) error {
 		return c.checkBlock(s, sc, retType)
 	case *parser.AssignStmt:
 		return c.checkAssignStmt(s, sc)
+	case *parser.FieldAssignStmt:
+		return c.checkFieldAssignStmt(s, sc)
 	default:
 		return fmt.Errorf("unhandled Stmt %T", stmt)
 	}
@@ -298,6 +300,73 @@ func (c *checker) checkAssignStmt(s *parser.AssignStmt, sc *scope) error {
 	}
 	c.exprTypes[s.Value] = coerced
 	return nil
+}
+
+func (c *checker) checkFieldAssignStmt(s *parser.FieldAssignStmt, sc *scope) error {
+	// Type-check the receiver.
+	recvType, err := c.checkExpr(s.Target.Receiver, sc, nil)
+	if err != nil {
+		return err
+	}
+
+	// Mutability check: walk to the root identifier.
+	if err := c.checkReceiverMutable(s.Target.Receiver, s.Target.Dot, sc); err != nil {
+		return err
+	}
+
+	// Transparently dereference ref<T> / refmut<T>.
+	if gen, ok := recvType.(*GenType); ok &&
+		(gen.Con == "ref" || gen.Con == "refmut") && len(gen.Params) > 0 {
+		recvType = gen.Params[0]
+	}
+
+	st, ok := recvType.(*StructType)
+	if !ok {
+		return c.errorf(s.Target.Dot, "field assignment on non-struct type %s", recvType)
+	}
+	fieldType, ok := st.Fields[s.Target.Field.Lexeme]
+	if !ok {
+		return c.errorf(s.Target.Field, "unknown field %q on %s", s.Target.Field.Lexeme, st.Name)
+	}
+
+	// Type-check the value.
+	valType, err := c.checkExpr(s.Value, sc, fieldType)
+	if err != nil {
+		return err
+	}
+	coerced, ok := Coerce(valType, fieldType)
+	if !ok {
+		return c.errorf(s.Target.Field,
+			"type mismatch: cannot assign %s to field %q of type %s", valType, s.Target.Field.Lexeme, fieldType)
+	}
+	c.exprTypes[s.Value] = coerced
+	c.record(s.Target, fieldType)
+	return nil
+}
+
+// checkReceiverMutable walks a field-access chain to the root identifier and
+// verifies it is declared mutable (or accessed through a ref/refmut pointer).
+func (c *checker) checkReceiverMutable(recv parser.Expr, errTok lexer.Token, sc *scope) error {
+	switch r := recv.(type) {
+	case *parser.IdentExpr:
+		info, ok := sc.lookupInfo(r.Tok.Lexeme)
+		if !ok {
+			return c.errorf(r.Tok, "undefined identifier %q", r.Tok.Lexeme)
+		}
+		// Assigning through a ref/refmut pointer is always permitted.
+		if gen, ok := info.typ.(*GenType); ok && (gen.Con == "ref" || gen.Con == "refmut") {
+			return nil
+		}
+		if !info.mutable {
+			return c.errorf(r.Tok, "cannot assign to field of immutable variable %q", r.Tok.Lexeme)
+		}
+		return nil
+	case *parser.FieldExpr:
+		return c.checkReceiverMutable(r.Receiver, errTok, sc)
+	default:
+		// Other expressions (calls, index) — allow; runtime semantics handle it.
+		return nil
+	}
 }
 
 func (c *checker) checkLetStmt(s *parser.LetStmt, sc *scope) error {

@@ -438,6 +438,57 @@ func TestMatchExpr(t *testing.T) {
 	}
 }
 
+// ── Field assignment ──────────────────────────────────────────────────────────
+
+func TestFieldAssignStmt(t *testing.T) {
+	src := `
+struct Point { x: u32, y: u32 }
+fn f() -> unit {
+    let mut p: Point = p
+    p.x = 10
+    return unit
+}`
+	file := parse(t, src)
+	fn := file.Decls[1].(*FnDecl)
+	assign, ok := fn.Body.Stmts[1].(*FieldAssignStmt)
+	if !ok {
+		t.Fatalf("stmt[1] must be *FieldAssignStmt, got %T", fn.Body.Stmts[1])
+	}
+	recv, ok := assign.Target.Receiver.(*IdentExpr)
+	if !ok || recv.Tok.Lexeme != "p" {
+		t.Errorf("receiver: want 'p', got %T", assign.Target.Receiver)
+	}
+	if assign.Target.Field.Lexeme != "x" {
+		t.Errorf("field: want 'x', got %q", assign.Target.Field.Lexeme)
+	}
+}
+
+func TestNestedFieldAssignStmt(t *testing.T) {
+	// p.inner.x = 5 should parse as FieldAssignStmt{Target: p.inner.x}
+	src := `
+struct Inner { x: u32 }
+struct Outer { inner: Inner }
+fn f() -> unit {
+    let mut o: Outer = o
+    o.inner.x = 5
+    return unit
+}`
+	file := parse(t, src)
+	fn := file.Decls[2].(*FnDecl)
+	assign, ok := fn.Body.Stmts[1].(*FieldAssignStmt)
+	if !ok {
+		t.Fatalf("stmt[1] must be *FieldAssignStmt, got %T", fn.Body.Stmts[1])
+	}
+	if assign.Target.Field.Lexeme != "x" {
+		t.Errorf("field: want 'x', got %q", assign.Target.Field.Lexeme)
+	}
+	// receiver of the target should itself be a FieldExpr (o.inner)
+	_, ok = assign.Target.Receiver.(*FieldExpr)
+	if !ok {
+		t.Errorf("receiver of nested assign must be *FieldExpr, got %T", assign.Target.Receiver)
+	}
+}
+
 // ── Error cases ───────────────────────────────────────────────────────────────
 
 func TestMissingReturnType(t *testing.T) {
