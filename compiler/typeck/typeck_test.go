@@ -524,6 +524,27 @@ fn f(x: option<u32>) -> u32 {
 }`)
 }
 
+// ── module / use declarations ─────────────────────────────────────────────────
+
+func TestModuleDeclCompiles(t *testing.T) {
+	mustCompile(t, `
+module mylib
+fn add(a: u32, b: u32) -> u32 { return a + b }`)
+}
+
+func TestUseDeclCompiles(t *testing.T) {
+	mustCompile(t, `
+module app
+use mylib
+fn main() -> unit { return unit }`)
+}
+
+func TestUseDeclPathCompiles(t *testing.T) {
+	mustCompile(t, `
+use mylib::Point
+fn f() -> unit { return unit }`)
+}
+
 // ── for loops and vec builtins ────────────────────────────────────────────────
 
 func TestForLoop(t *testing.T) {

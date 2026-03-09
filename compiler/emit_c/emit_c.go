@@ -292,11 +292,11 @@ func (e *emitter) emitFnDecl(d *parser.FnDecl) error {
 	// Emit requires assertions at the top of the function body.
 	for _, cc := range d.Contracts {
 		if cc.Kind == parser.ContractRequires {
-			var eb strings.Builder
-			if err := e.emitExpr(cc.Expr, &eb); err != nil {
+			e.write("    assert(")
+			if err := e.emitExpr(cc.Expr, &e.sb); err != nil {
 				return err
 			}
-			e.writef("    assert(%s);\n", eb.String())
+			e.write(");\n")
 		}
 	}
 
@@ -436,22 +436,22 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 			if err != nil {
 				return err
 			}
-			var vb strings.Builder
-			if err := e.emitExpr(s.Value, &vb); err != nil {
+			e.writef("%s{\n", ind)
+			e.writef("%s    %s _cnd_result = ", ind, ct)
+			if err := e.emitExpr(s.Value, &e.sb); err != nil {
 				return err
 			}
-			e.writef("%s{\n", ind)
-			e.writef("%s    %s _cnd_result = %s;\n", ind, ct, vb.String())
+			e.write(";\n")
 			for _, cc := range ensures {
-				var eb strings.Builder
 				prevInEnsures := e.inEnsures
 				e.inEnsures = true
-				if err := e.emitExpr(cc.Expr, &eb); err != nil {
+				e.writef("%s    assert(", ind)
+				if err := e.emitExpr(cc.Expr, &e.sb); err != nil {
 					e.inEnsures = prevInEnsures
 					return err
 				}
 				e.inEnsures = prevInEnsures
-				e.writef("%s    assert(%s);\n", ind, eb.String())
+				e.write(");\n")
 			}
 			if e.isMain {
 				e.writef("%s    return 0;\n", ind)
@@ -461,18 +461,18 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 			e.writef("%s}\n", ind)
 			return nil
 		}
-		var sb strings.Builder
-		if err := e.emitExpr(s.Value, &sb); err != nil {
+		e.write(ind + "return ")
+		if err := e.emitExpr(s.Value, &e.sb); err != nil {
 			return err
 		}
-		e.writef("%sreturn %s;\n", ind, sb.String())
+		e.write(";\n")
 
 	case *parser.ExprStmt:
-		var sb strings.Builder
-		if err := e.emitExpr(s.X, &sb); err != nil {
+		e.write(ind)
+		if err := e.emitExpr(s.X, &e.sb); err != nil {
 			return err
 		}
-		e.writef("%s%s;\n", ind, sb.String())
+		e.write(";\n")
 
 	case *parser.IfStmt:
 		return e.emitIfStmt(s, depth)
@@ -495,33 +495,35 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 		e.writef("%s}\n", ind)
 
 	case *parser.AssignStmt:
-		var vb strings.Builder
-		if err := e.emitExpr(s.Value, &vb); err != nil {
+		e.writef("%s%s = ", indent(depth), s.Name.Lexeme)
+		if err := e.emitExpr(s.Value, &e.sb); err != nil {
 			return err
 		}
-		e.writef("%s%s = %s;\n", indent(depth), s.Name.Lexeme, vb.String())
+		e.write(";\n")
 
 	case *parser.FieldAssignStmt:
-		var recv, val strings.Builder
-		if err := e.emitExpr(s.Target.Receiver, &recv); err != nil {
-			return err
-		}
-		if err := e.emitExpr(s.Value, &val); err != nil {
-			return err
-		}
 		recvType := e.res.ExprTypes[s.Target.Receiver]
-		if gen, ok := recvType.(*typeck.GenType); ok && (gen.Con == "ref" || gen.Con == "refmut") {
-			e.writef("%s%s->%s = %s;\n", ind, recv.String(), s.Target.Field.Lexeme, val.String())
-		} else {
-			e.writef("%s%s.%s = %s;\n", ind, recv.String(), s.Target.Field.Lexeme, val.String())
+		e.write(ind)
+		if err := e.emitExpr(s.Target.Receiver, &e.sb); err != nil {
+			return err
 		}
+		if gen, ok := recvType.(*typeck.GenType); ok && (gen.Con == "ref" || gen.Con == "refmut") {
+			e.write("->")
+		} else {
+			e.write(".")
+		}
+		e.write(s.Target.Field.Lexeme + " = ")
+		if err := e.emitExpr(s.Value, &e.sb); err != nil {
+			return err
+		}
+		e.write(";\n")
 
 	case *parser.AssertStmt:
-		var eb strings.Builder
-		if err := e.emitExpr(s.Expr, &eb); err != nil {
+		e.write(ind + "assert(")
+		if err := e.emitExpr(s.Expr, &e.sb); err != nil {
 			return err
 		}
-		e.writef("%sassert(%s);\n", ind, eb.String())
+		e.write(");\n")
 
 	case *parser.ForStmt:
 		return e.emitForStmt(s, depth)
@@ -573,21 +575,21 @@ func (e *emitter) emitLetStmt(s *parser.LetStmt, depth int) error {
 	if err != nil {
 		return err
 	}
-	var vb strings.Builder
-	if err := e.emitExpr(s.Value, &vb); err != nil {
+	e.writef("%s%s %s = ", indent(depth), ct, s.Name.Lexeme)
+	if err := e.emitExpr(s.Value, &e.sb); err != nil {
 		return err
 	}
-	e.writef("%s%s %s = %s;\n", indent(depth), ct, s.Name.Lexeme, vb.String())
+	e.write(";\n")
 	return nil
 }
 
 func (e *emitter) emitIfStmt(s *parser.IfStmt, depth int) error {
 	ind := indent(depth)
-	var cb strings.Builder
-	if err := e.emitExpr(s.Cond, &cb); err != nil {
+	e.write(ind + "if (")
+	if err := e.emitExpr(s.Cond, &e.sb); err != nil {
 		return err
 	}
-	e.writef("%sif (%s) {\n", ind, cb.String())
+	e.write(") {\n")
 	if err := e.emitBlock(s.Then, depth+1); err != nil {
 		return err
 	}
@@ -650,13 +652,6 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 		}
 
 	case *parser.BinaryExpr:
-		var l, r strings.Builder
-		if err := e.emitExpr(ex.Left, &l); err != nil {
-			return err
-		}
-		if err := e.emitExpr(ex.Right, &r); err != nil {
-			return err
-		}
 		op := ex.Op.Lexeme
 		switch ex.Op.Type {
 		case lexer.TokAnd:
@@ -664,18 +659,29 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 		case lexer.TokOr:
 			op = "||"
 		}
-		fmt.Fprintf(sb, "(%s %s %s)", l.String(), op, r.String())
-
-	case *parser.UnaryExpr:
-		var operand strings.Builder
-		if err := e.emitExpr(ex.Operand, &operand); err != nil {
+		sb.WriteByte('(')
+		if err := e.emitExpr(ex.Left, sb); err != nil {
 			return err
 		}
+		sb.WriteByte(' ')
+		sb.WriteString(op)
+		sb.WriteByte(' ')
+		if err := e.emitExpr(ex.Right, sb); err != nil {
+			return err
+		}
+		sb.WriteByte(')')
+
+	case *parser.UnaryExpr:
 		op := ex.Op.Lexeme
 		if ex.Op.Type == lexer.TokNot {
 			op = "!"
 		}
-		fmt.Fprintf(sb, "(%s%s)", op, operand.String())
+		sb.WriteByte('(')
+		sb.WriteString(op)
+		if err := e.emitExpr(ex.Operand, sb); err != nil {
+			return err
+		}
+		sb.WriteByte(')')
 
 	case *parser.MustExpr:
 		return e.emitMustOrMatch(ex.X, ex.Arms, e.res.ExprTypes[ex], sb)
@@ -684,11 +690,10 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 		return e.emitMustOrMatch(ex.X, ex.Arms, e.res.ExprTypes[ex], sb)
 
 	case *parser.ReturnExpr:
-		var vb strings.Builder
-		if err := e.emitExpr(ex.Value, &vb); err != nil {
+		sb.WriteString("return ")
+		if err := e.emitExpr(ex.Value, sb); err != nil {
 			return err
 		}
-		fmt.Fprintf(sb, "return %s", vb.String())
 
 	case *parser.CallExpr:
 		// Check for built-in print functions and vec builtins.
@@ -713,54 +718,59 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 				return err
 			}
 		}
-		var fn strings.Builder
-		if err := e.emitExpr(ex.Fn, &fn); err != nil {
+		if err := e.emitExpr(ex.Fn, sb); err != nil {
 			return err
 		}
-		args := make([]string, len(ex.Args))
+		sb.WriteByte('(')
 		for i, arg := range ex.Args {
-			var ab strings.Builder
-			if err := e.emitExpr(arg, &ab); err != nil {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			if err := e.emitExpr(arg, sb); err != nil {
 				return err
 			}
-			args[i] = ab.String()
 		}
-		fmt.Fprintf(sb, "%s(%s)", fn.String(), strings.Join(args, ", "))
+		sb.WriteByte(')')
 
 	case *parser.FieldExpr:
-		var recv strings.Builder
-		if err := e.emitExpr(ex.Receiver, &recv); err != nil {
+		if err := e.emitExpr(ex.Receiver, sb); err != nil {
 			return err
 		}
-		// If receiver type is ref<T>/refmut<T>, use ->; otherwise use .
 		recvType := e.res.ExprTypes[ex.Receiver]
 		if gen, ok := recvType.(*typeck.GenType); ok &&
 			(gen.Con == "ref" || gen.Con == "refmut") {
-			fmt.Fprintf(sb, "%s->%s", recv.String(), ex.Field.Lexeme)
+			sb.WriteString("->")
 		} else {
-			fmt.Fprintf(sb, "%s.%s", recv.String(), ex.Field.Lexeme)
+			sb.WriteByte('.')
 		}
+		sb.WriteString(ex.Field.Lexeme)
 
 	case *parser.IndexExpr:
-		var coll, idx strings.Builder
-		if err := e.emitExpr(ex.Collection, &coll); err != nil {
+		if err := e.emitExpr(ex.Collection, sb); err != nil {
 			return err
 		}
-		if err := e.emitExpr(ex.Index, &idx); err != nil {
+		sb.WriteByte('[')
+		if err := e.emitExpr(ex.Index, sb); err != nil {
 			return err
 		}
-		fmt.Fprintf(sb, "%s[%s]", coll.String(), idx.String())
+		sb.WriteByte(']')
 
 	case *parser.StructLitExpr:
-		fields := make([]string, len(ex.Fields))
+		sb.WriteByte('(')
+		sb.WriteString(ex.TypeName.Lexeme)
+		sb.WriteString("){ ")
 		for i, fi := range ex.Fields {
-			var vb strings.Builder
-			if err := e.emitExpr(fi.Value, &vb); err != nil {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteByte('.')
+			sb.WriteString(fi.Name.Lexeme)
+			sb.WriteString(" = ")
+			if err := e.emitExpr(fi.Value, sb); err != nil {
 				return err
 			}
-			fields[i] = fmt.Sprintf(".%s = %s", fi.Name.Lexeme, vb.String())
 		}
-		fmt.Fprintf(sb, "(%s){ %s }", ex.TypeName.Lexeme, strings.Join(fields, ", "))
+		sb.WriteString(" }")
 
 	default:
 		return fmt.Errorf("unhandled Expr %T in emit", expr)
@@ -794,14 +804,16 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 		if err != nil {
 			return true, err
 		}
-		var vb, valb strings.Builder
-		if err := e.emitExpr(args[0], &vb); err != nil {
+		sb.WriteString(e.vecPushName(elemC))
+		sb.WriteString("(&(")
+		if err := e.emitExpr(args[0], sb); err != nil {
 			return true, err
 		}
-		if err := e.emitExpr(args[1], &valb); err != nil {
+		sb.WriteString("), ")
+		if err := e.emitExpr(args[1], sb); err != nil {
 			return true, err
 		}
-		fmt.Fprintf(sb, "%s(&(%s), %s)", e.vecPushName(elemC), vb.String(), valb.String())
+		sb.WriteByte(')')
 		return true, nil
 
 	case "vec_len":
@@ -809,45 +821,50 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 		if len(args) != 1 {
 			return false, nil
 		}
-		var vb strings.Builder
-		if err := e.emitExpr(args[0], &vb); err != nil {
+		sb.WriteByte('(')
+		if err := e.emitExpr(args[0], sb); err != nil {
 			return true, err
 		}
-		fmt.Fprintf(sb, "(%s)._len", vb.String())
+		sb.WriteString(")._len")
 		return true, nil
 	}
 
 	if len(args) != 1 {
 		return false, nil
 	}
-	var fmt_str string
-	var cast string
 	switch name {
 	case "print":
-		fmt_str = "%s\\n"
+		sb.WriteString("printf(\"%s\\n\", ")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte(')')
 	case "print_int":
-		fmt_str = "%lld\\n"
-		cast = "(long long)"
+		sb.WriteString("printf(\"%lld\\n\", (long long)")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte(')')
 	case "print_u32":
-		fmt_str = "%u\\n"
+		sb.WriteString("printf(\"%u\\n\", ")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte(')')
 	case "print_bool":
-		// handled specially below
+		sb.WriteString("printf(\"%s\\n\", (")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteString(") ? \"true\" : \"false\")")
 	case "print_f64":
-		fmt_str = "%f\\n"
+		sb.WriteString("printf(\"%f\\n\", ")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte(')')
 	default:
 		return false, nil
-	}
-
-	var ab strings.Builder
-	if err := e.emitExpr(args[0], &ab); err != nil {
-		return true, err
-	}
-	arg := ab.String()
-
-	if name == "print_bool" {
-		fmt.Fprintf(sb, `printf("%%s\n", (%s) ? "true" : "false")`, arg)
-	} else {
-		fmt.Fprintf(sb, `printf("%s", %s%s)`, fmt_str, cast, arg)
 	}
 	return true, nil
 }
@@ -860,10 +877,6 @@ func (e *emitter) emitConstructorCall(ex *parser.CallExpr, fn *parser.IdentExpr,
 		if len(ex.Args) != 1 {
 			return false, nil
 		}
-		var ab strings.Builder
-		if err := e.emitExpr(ex.Args[0], &ab); err != nil {
-			return true, err
-		}
 		argType := e.res.ExprTypes[ex.Args[0]]
 		if argType == nil {
 			return false, nil
@@ -872,7 +885,14 @@ func (e *emitter) emitConstructorCall(ex *parser.CallExpr, fn *parser.IdentExpr,
 		if err != nil {
 			return true, err
 		}
-		fmt.Fprintf(sb, "&(%s){%s}", ct, ab.String())
+		sb.WriteString("&(")
+		sb.WriteString(ct)
+		sb.WriteByte('{')
+		if err := e.emitExpr(ex.Args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte('}')
+		sb.WriteByte(')')
 		return true, nil
 
 	case lexer.TokNone:
@@ -891,11 +911,13 @@ func (e *emitter) emitConstructorCall(ex *parser.CallExpr, fn *parser.IdentExpr,
 		if err != nil {
 			return true, err
 		}
-		var ab strings.Builder
-		if err := e.emitExpr(ex.Args[0], &ab); err != nil {
+		sb.WriteByte('(')
+		sb.WriteString(structName)
+		sb.WriteString("){ ._ok = 1, ._ok_val = ")
+		if err := e.emitExpr(ex.Args[0], sb); err != nil {
 			return true, err
 		}
-		fmt.Fprintf(sb, "(%s){ ._ok = 1, ._ok_val = %s }", structName, ab.String())
+		sb.WriteByte('}')
 		return true, nil
 
 	case lexer.TokErr:
@@ -910,11 +932,13 @@ func (e *emitter) emitConstructorCall(ex *parser.CallExpr, fn *parser.IdentExpr,
 		if err != nil {
 			return true, err
 		}
-		var ab strings.Builder
-		if err := e.emitExpr(ex.Args[0], &ab); err != nil {
+		sb.WriteByte('(')
+		sb.WriteString(structName)
+		sb.WriteString("){ ._ok = 0, ._err_val = ")
+		if err := e.emitExpr(ex.Args[0], sb); err != nil {
 			return true, err
 		}
-		fmt.Fprintf(sb, "(%s){ ._ok = 0, ._err_val = %s }", structName, ab.String())
+		sb.WriteByte('}')
 		return true, nil
 	}
 	return false, nil

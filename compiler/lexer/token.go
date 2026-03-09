@@ -63,8 +63,9 @@ const (
 	TokRBrace    // }
 	TokLBracket  // [
 	TokRBracket  // ]
-	TokColon     // :
-	TokComma     // ,
+	TokColon      // :
+	TokColonColon // ::
+	TokComma      // ,
 	TokDot       // .
 	TokDotDot    // ..
 	TokSemicolon // ;
@@ -201,8 +202,9 @@ var tokenNames = map[TokenType]string{
 	TokRBrace:    "}",
 	TokLBracket:  "[",
 	TokRBracket:  "]",
-	TokColon:     ":",
-	TokComma:     ",",
+	TokColon:      ":",
+	TokColonColon: "::",
+	TokComma:      ",",
 	TokDot:       ".",
 	TokDotDot:    "..",
 	TokSemicolon: ";",

@@ -160,8 +160,11 @@ func (c *checker) checkFile(file *parser.File) error {
 		c.fnEffects[name] = ann
 	}
 	// Pass 1: collect struct types, function signatures, and effects annotations.
+	// ModuleDecl and UseDecl are recorded for future scope enforcement; currently skipped.
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
+		case *parser.ModuleDecl, *parser.UseDecl:
+			_ = d // syntax accepted; enforcement is a future feature
 		case *parser.FnDecl:
 			sig, err := c.buildFnSig(d)
 			if err != nil {
@@ -179,7 +182,7 @@ func (c *checker) checkFile(file *parser.File) error {
 			c.structs[d.Name.Lexeme] = st
 		}
 	}
-	// Pass 2: type-check function bodies.
+	// Pass 2: type-check function bodies. Non-code decls are skipped.
 	for _, decl := range file.Decls {
 		if d, ok := decl.(*parser.FnDecl); ok {
 			if err := c.checkFnDecl(d); err != nil {

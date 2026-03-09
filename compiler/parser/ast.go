@@ -27,6 +27,27 @@ type Decl interface {
 	declNode()
 }
 
+// ModuleDecl: module name
+// Declares the module this file belongs to. At most one per file, conventionally first.
+type ModuleDecl struct {
+	ModuleTok lexer.Token
+	Name      lexer.Token
+}
+
+func (d *ModuleDecl) Pos() lexer.Token { return d.ModuleTok }
+func (d *ModuleDecl) declNode()        {}
+
+// UseDecl: use foo  or  use foo::Bar  or  use foo::bar::Baz
+// Declares a dependency on names from another module.
+// Path holds each segment in order; segments are separated by '::'.
+type UseDecl struct {
+	UseTok lexer.Token
+	Path   []lexer.Token // e.g. [foo, Bar] for "use foo::Bar"
+}
+
+func (d *UseDecl) Pos() lexer.Token { return d.UseTok }
+func (d *UseDecl) declNode()        {}
+
 // FnDecl: fn name(params) -> RetType [pure | effects(...) | cap(...)] { body }
 type FnDecl struct {
 	FnTok     lexer.Token

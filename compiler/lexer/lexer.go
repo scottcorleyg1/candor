@@ -187,7 +187,12 @@ func (l *lexer) scanOne() error {
 		l.emit(TokPercent, "%", line, col)
 	case ':':
 		l.advance()
-		l.emit(TokColon, ":", line, col)
+		if l.peek() == ':' {
+			l.advance()
+			l.emit(TokColonColon, "::", line, col)
+		} else {
+			l.emit(TokColon, ":", line, col)
+		}
 	case '_':
 		// Bare underscore is the wildcard pattern; starts an identifier if
 		// followed by an alphanumeric character.

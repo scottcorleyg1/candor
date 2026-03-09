@@ -141,10 +141,41 @@ func (p *parser) parseDecl() (Decl, error) {
 		return p.parseFnDecl()
 	case lexer.TokStruct:
 		return p.parseStructDecl()
+	case lexer.TokModule:
+		return p.parseModuleDecl()
+	case lexer.TokUse:
+		return p.parseUseDecl()
 	default:
 		t := p.peek()
-		return nil, p.errorf(t, "expected declaration (fn or struct), got %v %q", t.Type, t.Lexeme)
+		return nil, p.errorf(t, "expected declaration (fn, struct, module, or use), got %v %q", t.Type, t.Lexeme)
 	}
+}
+
+func (p *parser) parseModuleDecl() (*ModuleDecl, error) {
+	modTok := p.advance() // consume 'module'
+	name, err := p.expect(lexer.TokIdent)
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleDecl{ModuleTok: modTok, Name: name}, nil
+}
+
+func (p *parser) parseUseDecl() (*UseDecl, error) {
+	useTok := p.advance() // consume 'use'
+	seg, err := p.expect(lexer.TokIdent)
+	if err != nil {
+		return nil, err
+	}
+	path := []lexer.Token{seg}
+	for p.check(lexer.TokColonColon) {
+		p.advance() // consume '::'
+		seg, err = p.expect(lexer.TokIdent)
+		if err != nil {
+			return nil, err
+		}
+		path = append(path, seg)
+	}
+	return &UseDecl{UseTok: useTok, Path: path}, nil
 }
 
 func (p *parser) parseFnDecl() (*FnDecl, error) {

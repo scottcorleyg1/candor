@@ -577,6 +577,57 @@ fn f() -> unit {
 	}
 }
 
+// ── module / use declarations ─────────────────────────────────────────────────
+
+func TestModuleDecl(t *testing.T) {
+	file := parse(t, `module mylib
+fn f() -> unit { return unit }`)
+	mod, ok := file.Decls[0].(*ModuleDecl)
+	if !ok {
+		t.Fatalf("Decls[0] must be *ModuleDecl, got %T", file.Decls[0])
+	}
+	if mod.Name.Lexeme != "mylib" {
+		t.Errorf("module name: want 'mylib', got %q", mod.Name.Lexeme)
+	}
+}
+
+func TestUseDecl(t *testing.T) {
+	file := parse(t, `module app
+use mylib
+fn main() -> unit { return unit }`)
+	use, ok := file.Decls[1].(*UseDecl)
+	if !ok {
+		t.Fatalf("Decls[1] must be *UseDecl, got %T", file.Decls[1])
+	}
+	if len(use.Path) != 1 || use.Path[0].Lexeme != "mylib" {
+		t.Errorf("use path: want [mylib], got %v", use.Path)
+	}
+}
+
+func TestUseDeclPath(t *testing.T) {
+	file := parse(t, `use mylib::Point
+fn f() -> unit { return unit }`)
+	use, ok := file.Decls[0].(*UseDecl)
+	if !ok {
+		t.Fatalf("Decls[0] must be *UseDecl, got %T", file.Decls[0])
+	}
+	if len(use.Path) != 2 {
+		t.Fatalf("use path len: want 2, got %d", len(use.Path))
+	}
+	if use.Path[0].Lexeme != "mylib" || use.Path[1].Lexeme != "Point" {
+		t.Errorf("use path: want [mylib, Point], got %v", use.Path)
+	}
+}
+
+func TestUseDeclDeepPath(t *testing.T) {
+	file := parse(t, `use std::io::Writer
+fn f() -> unit { return unit }`)
+	use := file.Decls[0].(*UseDecl)
+	if len(use.Path) != 3 {
+		t.Fatalf("want path len 3, got %d", len(use.Path))
+	}
+}
+
 // ── for loops ────────────────────────────────────────────────────────────────
 
 func TestForStmt(t *testing.T) {
