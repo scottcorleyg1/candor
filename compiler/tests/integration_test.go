@@ -462,6 +462,58 @@ fn main() -> unit {
 	}
 }
 
+// TestContractsProgram verifies requires/assert compile and run.
+func TestContractsProgram(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn add_positive(a: u32, b: u32) -> u32
+    requires a > 0
+    ensures result > a
+{
+    assert b > 0
+    return a + b
+}
+fn main() -> unit {
+    print_u32(add_positive(3, 4))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "contracts", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("binary failed: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "7\n" {
+		t.Errorf("stdout: got %q, want %q", got, "7\n")
+	}
+}
+
+// TestStructLiteralProgram verifies struct literal syntax compiles and runs.
+func TestStructLiteralProgram(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+struct Point { x: u32, y: u32 }
+fn sum(p: Point) -> u32 { return p.x + p.y }
+fn main() -> unit {
+    let p = Point { x: 3, y: 4 }
+    print_u32(sum(p))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "struct_lit", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("binary failed: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "7\n" {
+		t.Errorf("stdout: got %q, want %q", got, "7\n")
+	}
+}
+
 // TestFieldAssignProgram verifies struct field mutation compiles and runs.
 // A helper copies the struct and mutates the copy; main just calls it.
 func TestFieldAssignProgram(t *testing.T) {

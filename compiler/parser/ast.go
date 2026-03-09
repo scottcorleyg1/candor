@@ -29,12 +29,13 @@ type Decl interface {
 
 // FnDecl: fn name(params) -> RetType [pure | effects(...) | cap(...)] { body }
 type FnDecl struct {
-	FnTok   lexer.Token
-	Name    lexer.Token
-	Params  []Param
-	RetType TypeExpr
-	Effects *EffectsAnnotation // nil = no annotation (unchecked)
-	Body    *BlockStmt
+	FnTok     lexer.Token
+	Name      lexer.Token
+	Params    []Param
+	RetType   TypeExpr
+	Effects   *EffectsAnnotation // nil = no annotation (unchecked)
+	Contracts []ContractClause   // requires/ensures; nil or empty = none
+	Body      *BlockStmt
 }
 
 func (d *FnDecl) Pos() lexer.Token { return d.FnTok }
@@ -272,6 +273,48 @@ type ReturnExpr struct {
 
 func (e *ReturnExpr) Pos() lexer.Token { return e.ReturnTok }
 func (e *ReturnExpr) exprNode()        {}
+
+// StructLitExpr: TypeName { field: value, ... }
+type StructLitExpr struct {
+	TypeName lexer.Token
+	Fields   []FieldInit
+}
+
+func (e *StructLitExpr) Pos() lexer.Token { return e.TypeName }
+func (e *StructLitExpr) exprNode()        {}
+
+// FieldInit: name: value (inside a struct literal)
+type FieldInit struct {
+	Name  lexer.Token
+	Colon lexer.Token
+	Value Expr
+}
+
+// AssertStmt: assert expr  — runtime precondition check inside a function body.
+type AssertStmt struct {
+	AssertTok lexer.Token
+	Expr      Expr
+}
+
+func (s *AssertStmt) Pos() lexer.Token { return s.AssertTok }
+func (s *AssertStmt) stmtNode()        {}
+
+// ── Contracts ──────────────────────────────────────────────────────────────────
+
+// ContractKind distinguishes requires from ensures clauses.
+type ContractKind uint8
+
+const (
+	ContractRequires ContractKind = iota
+	ContractEnsures
+)
+
+// ContractClause is a single requires or ensures predicate on a function.
+type ContractClause struct {
+	Kind ContractKind
+	Tok  lexer.Token // the 'requires' or 'ensures' token
+	Expr Expr
+}
 
 // ── Effects annotations ────────────────────────────────────────────────────────
 

@@ -43,6 +43,9 @@ type emitter struct {
 	retIsUnit bool // true when emitting a fn returning unit (C void)
 	isMain    bool // true when emitting the special main function
 	tmpCount  int
+	contracts []parser.ContractClause
+	retType   typeck.Type
+	inEnsures bool // true when emitting ensures expressions (result -> _cnd_result)
 }
 
 func (e *emitter) freshTmp() string {
@@ -59,6 +62,7 @@ func (e *emitter) writeln(s string)            { e.sb.WriteString(s); e.sb.Write
 func (e *emitter) emitFile(file *parser.File) error {
 	e.writeln("#include <stdint.h>")
 	e.writeln("#include <stdio.h>")
+	e.writeln("#include <assert.h>")
 	e.writeln("")
 
 	// Emit result<T,E> struct typedefs used in this file.
@@ -226,8 +230,23 @@ func (e *emitter) emitFnDecl(d *parser.FnDecl) error {
 	// Save and set function context.
 	prevRetIsUnit := e.retIsUnit
 	prevIsMain := e.isMain
+	prevContracts := e.contracts
+	prevRetType := e.retType
 	e.retIsUnit = sig.Ret.Equals(typeck.TUnit)
 	e.isMain = d.Name.Lexeme == "main"
+	e.contracts = d.Contracts
+	e.retType = sig.Ret
+
+	// Emit requires assertions at the top of the function body.
+	for _, cc := range d.Contracts {
+		if cc.Kind == parser.ContractRequires {
+			var eb strings.Builder
+			if err := e.emitExpr(cc.Expr, &eb); err != nil {
+				return err
+			}
+			e.writef("    assert(%s);\n", eb.String())
+		}
+	}
 
 	isMain := e.isMain
 	if err := e.emitBlock(d.Body, 1); err != nil {
@@ -236,6 +255,8 @@ func (e *emitter) emitFnDecl(d *parser.FnDecl) error {
 
 	e.retIsUnit = prevRetIsUnit
 	e.isMain = prevIsMain
+	e.contracts = prevContracts
+	e.retType = prevRetType
 
 	// C main must end with return 0. Only add it when the body doesn't
 	// already end in an explicit return statement.
@@ -342,12 +363,50 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 			return nil
 		}
 		// return unit  → return (void) / return 0 for main
-		if ident, ok := s.Value.(*parser.IdentExpr); ok && ident.Tok.Lexeme == "unit" {
+		if isUnitValue(s.Value) {
 			if e.isMain {
 				e.writef("%sreturn 0;\n", ind)
 			} else {
 				e.writef("%sreturn;\n", ind)
 			}
+			return nil
+		}
+		// Collect ensures clauses.
+		var ensures []parser.ContractClause
+		for _, cc := range e.contracts {
+			if cc.Kind == parser.ContractEnsures {
+				ensures = append(ensures, cc)
+			}
+		}
+		if len(ensures) > 0 {
+			// Wrap: { RetType _cnd_result = val; assert(ensures...); return _cnd_result; }
+			ct, err := e.cType(e.retType)
+			if err != nil {
+				return err
+			}
+			var vb strings.Builder
+			if err := e.emitExpr(s.Value, &vb); err != nil {
+				return err
+			}
+			e.writef("%s{\n", ind)
+			e.writef("%s    %s _cnd_result = %s;\n", ind, ct, vb.String())
+			for _, cc := range ensures {
+				var eb strings.Builder
+				prevInEnsures := e.inEnsures
+				e.inEnsures = true
+				if err := e.emitExpr(cc.Expr, &eb); err != nil {
+					e.inEnsures = prevInEnsures
+					return err
+				}
+				e.inEnsures = prevInEnsures
+				e.writef("%s    assert(%s);\n", ind, eb.String())
+			}
+			if e.isMain {
+				e.writef("%s    return 0;\n", ind)
+			} else {
+				e.writef("%s    return _cnd_result;\n", ind)
+			}
+			e.writef("%s}\n", ind)
 			return nil
 		}
 		var sb strings.Builder
@@ -404,6 +463,13 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 		} else {
 			e.writef("%s%s.%s = %s;\n", ind, recv.String(), s.Target.Field.Lexeme, val.String())
 		}
+
+	case *parser.AssertStmt:
+		var eb strings.Builder
+		if err := e.emitExpr(s.Expr, &eb); err != nil {
+			return err
+		}
+		e.writef("%sassert(%s);\n", ind, eb.String())
 
 	default:
 		return fmt.Errorf("unhandled Stmt %T", stmt)
@@ -490,6 +556,8 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 		if name == "unit" {
 			// Should not reach here (handled at call sites), but be safe.
 			sb.WriteString("/* unit */")
+		} else if e.inEnsures && name == "result" {
+			sb.WriteString("_cnd_result")
 		} else {
 			sb.WriteString(name)
 		}
@@ -583,6 +651,17 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 			return err
 		}
 		fmt.Fprintf(sb, "%s[%s]", coll.String(), idx.String())
+
+	case *parser.StructLitExpr:
+		fields := make([]string, len(ex.Fields))
+		for i, fi := range ex.Fields {
+			var vb strings.Builder
+			if err := e.emitExpr(fi.Value, &vb); err != nil {
+				return err
+			}
+			fields[i] = fmt.Sprintf(".%s = %s", fi.Name.Lexeme, vb.String())
+		}
+		fmt.Fprintf(sb, "(%s){ %s }", ex.TypeName.Lexeme, strings.Join(fields, ", "))
 
 	default:
 		return fmt.Errorf("unhandled Expr %T in emit", expr)
@@ -948,4 +1027,10 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 	}
 
 	return "", fmt.Errorf("cannot map type %s to C", t)
+}
+
+// isUnitValue returns true if the expression is the identifier "unit".
+func isUnitValue(e parser.Expr) bool {
+	ident, ok := e.(*parser.IdentExpr)
+	return ok && ident.Tok.Lexeme == "unit"
 }

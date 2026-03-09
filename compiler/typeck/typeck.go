@@ -19,6 +19,7 @@ package typeck
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/scottcorleyg1/candor/compiler/lexer"
 	"github.com/scottcorleyg1/candor/compiler/parser"
@@ -68,11 +69,12 @@ func Check(file *parser.File) (*Result, error) {
 // ── Internal checker state ────────────────────────────────────────────────────
 
 type checker struct {
-	exprTypes map[parser.Expr]Type
-	fnSigs    map[string]*FnType
-	structs   map[string]*StructType
-	fnEffects map[string]*parser.EffectsAnnotation // collected effects annotations
-	curEffects *parser.EffectsAnnotation            // effects of fn currently being checked
+	exprTypes  map[parser.Expr]Type
+	fnSigs     map[string]*FnType
+	structs    map[string]*StructType
+	fnEffects  map[string]*parser.EffectsAnnotation // collected effects annotations
+	curEffects *parser.EffectsAnnotation             // effects of fn currently being checked
+	errs       []error                               // collected statement-level errors
 }
 
 // scope is a linked chain of variable bindings.
@@ -185,6 +187,9 @@ func (c *checker) checkFile(file *parser.File) error {
 			}
 		}
 	}
+	if len(c.errs) > 0 {
+		return multiError(c.errs)
+	}
 	return nil
 }
 
@@ -270,6 +275,25 @@ func (c *checker) checkFnDecl(d *parser.FnDecl) error {
 	// Set the current function's effects for callee-checking within the body.
 	prev := c.curEffects
 	c.curEffects = c.fnEffects[d.Name.Lexeme] // nil if unannotated
+
+	// Type-check contract clauses.
+	retType := sig.Ret
+	for _, cc := range d.Contracts {
+		clauseSc := newScope(sc)
+		if cc.Kind == parser.ContractEnsures {
+			clauseSc.define("result", retType)
+		}
+		condType, err := c.checkExpr(cc.Expr, clauseSc, TBool)
+		if err != nil {
+			c.curEffects = prev
+			return err
+		}
+		if !condType.Equals(TBool) {
+			c.curEffects = prev
+			return c.errorf(cc.Tok, "contract clause must be bool, got %s", condType)
+		}
+	}
+
 	err := c.checkBlock(d.Body, sc, sig.Ret)
 	c.curEffects = prev
 	return err
@@ -279,7 +303,8 @@ func (c *checker) checkBlock(block *parser.BlockStmt, sc *scope, retType Type) e
 	inner := newScope(sc)
 	for _, stmt := range block.Stmts {
 		if err := c.checkStmt(stmt, inner, retType); err != nil {
-			return err
+			c.errs = append(c.errs, err)
+			// Continue to the next statement — collect all errors.
 		}
 	}
 	return nil
@@ -306,6 +331,8 @@ func (c *checker) checkStmt(stmt parser.Stmt, sc *scope, retType Type) error {
 		return c.checkAssignStmt(s, sc)
 	case *parser.FieldAssignStmt:
 		return c.checkFieldAssignStmt(s, sc)
+	case *parser.AssertStmt:
+		return c.checkAssertStmt(s, sc)
 	default:
 		return fmt.Errorf("unhandled Stmt %T", stmt)
 	}
@@ -532,6 +559,9 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 			return nil, err
 		}
 		return TNever, nil
+
+	case *parser.StructLitExpr:
+		return c.inferStructLitExpr(e, sc)
 
 	default:
 		return nil, fmt.Errorf("unhandled Expr %T", expr)
@@ -1013,4 +1043,63 @@ func (c *checker) inferConstructorCall(e *parser.CallExpr, fn *parser.IdentExpr,
 		return t, nil
 	}
 	return nil, fmt.Errorf("unreachable constructor")
+}
+
+func (c *checker) checkAssertStmt(s *parser.AssertStmt, sc *scope) error {
+	condType, err := c.checkExpr(s.Expr, sc, TBool)
+	if err != nil {
+		return err
+	}
+	if !condType.Equals(TBool) {
+		return c.errorf(s.AssertTok, "assert requires bool, got %s", condType)
+	}
+	return nil
+}
+
+// multiError joins multiple type-check errors into one.
+type multiError []error
+
+func (m multiError) Error() string {
+	if len(m) == 1 {
+		return m[0].Error()
+	}
+	msgs := make([]string, len(m))
+	for i, e := range m {
+		msgs[i] = e.Error()
+	}
+	return strings.Join(msgs, "\n")
+}
+
+func (c *checker) inferStructLitExpr(e *parser.StructLitExpr, sc *scope) (Type, error) {
+	st, ok := c.structs[e.TypeName.Lexeme]
+	if !ok {
+		return nil, c.errorf(e.TypeName, "undefined struct %q", e.TypeName.Lexeme)
+	}
+	provided := make(map[string]bool, len(e.Fields))
+	for _, fi := range e.Fields {
+		if _, ok := st.Fields[fi.Name.Lexeme]; !ok {
+			return nil, c.errorf(fi.Name, "unknown field %q on struct %s", fi.Name.Lexeme, st.Name)
+		}
+		if provided[fi.Name.Lexeme] {
+			return nil, c.errorf(fi.Name, "duplicate field %q in struct literal", fi.Name.Lexeme)
+		}
+		provided[fi.Name.Lexeme] = true
+		fieldType := st.Fields[fi.Name.Lexeme]
+		valType, err := c.checkExpr(fi.Value, sc, fieldType)
+		if err != nil {
+			return nil, err
+		}
+		coerced, ok := Coerce(valType, fieldType)
+		if !ok {
+			return nil, c.errorf(fi.Name,
+				"type mismatch: cannot use %s as %s for field %q", valType, fieldType, fi.Name.Lexeme)
+		}
+		c.exprTypes[fi.Value] = coerced
+	}
+	for name := range st.Fields {
+		if !provided[name] {
+			return nil, c.errorf(e.TypeName, "missing field %q in struct literal for %s", name, st.Name)
+		}
+	}
+	return st, nil
 }

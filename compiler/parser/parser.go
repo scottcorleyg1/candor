@@ -175,17 +175,22 @@ func (p *parser) parseFnDecl() (*FnDecl, error) {
 	if err != nil {
 		return nil, err
 	}
+	contracts, err := p.parseContracts()
+	if err != nil {
+		return nil, err
+	}
 	body, err := p.parseBlock()
 	if err != nil {
 		return nil, err
 	}
 	return &FnDecl{
-		FnTok:   fnTok,
-		Name:    nameTok,
-		Params:  params,
-		RetType: retType,
-		Effects: effects,
-		Body:    body,
+		FnTok:     fnTok,
+		Name:      nameTok,
+		Params:    params,
+		RetType:   retType,
+		Effects:   effects,
+		Contracts: contracts,
+		Body:      body,
 	}, nil
 }
 
@@ -241,6 +246,30 @@ func (p *parser) parseEffects() (*EffectsAnnotation, error) {
 		return &EffectsAnnotation{Kind: EffectsCap, Names: []string{capName.Lexeme}}, nil
 	}
 	return nil, nil // no annotation
+}
+
+func (p *parser) parseContracts() ([]ContractClause, error) {
+	var clauses []ContractClause
+	for {
+		switch p.peekType() {
+		case lexer.TokRequires:
+			tok := p.advance()
+			expr, err := p.parseExpr()
+			if err != nil {
+				return nil, err
+			}
+			clauses = append(clauses, ContractClause{Kind: ContractRequires, Tok: tok, Expr: expr})
+		case lexer.TokEnsures:
+			tok := p.advance()
+			expr, err := p.parseExpr()
+			if err != nil {
+				return nil, err
+			}
+			clauses = append(clauses, ContractClause{Kind: ContractEnsures, Tok: tok, Expr: expr})
+		default:
+			return clauses, nil
+		}
+	}
 }
 
 func (p *parser) parseParams() ([]Param, error) {
@@ -341,6 +370,13 @@ func (p *parser) parseStmt() (Stmt, error) {
 		return p.parseLoopStmt()
 	case lexer.TokBreak:
 		return &BreakStmt{BreakTok: p.advance()}, nil
+	case lexer.TokAssert:
+		assertTok := p.advance()
+		expr, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		return &AssertStmt{AssertTok: assertTok, Expr: expr}, nil
 	default:
 		return p.parseExprOrAssignStmt()
 	}
@@ -622,6 +658,23 @@ func (p *parser) parsePostfixExpr() (Expr, error) {
 			}
 			expr = &MustExpr{X: expr, MustTok: mustTok, Arms: arms}
 
+		case lexer.TokLBrace:
+			// Struct literal: only when expr is a PascalCase identifier.
+			ident, isIdent := expr.(*IdentExpr)
+			if isIdent && len(ident.Tok.Lexeme) > 0 && ident.Tok.Lexeme[0] >= 'A' && ident.Tok.Lexeme[0] <= 'Z' {
+				p.advance() // consume '{'
+				fields, err := p.parseFieldInits()
+				if err != nil {
+					return nil, err
+				}
+				if _, err := p.expect(lexer.TokRBrace); err != nil {
+					return nil, err
+				}
+				expr = &StructLitExpr{TypeName: ident.Tok, Fields: fields}
+				continue
+			}
+			return expr, nil
+
 		default:
 			return expr, nil
 		}
@@ -646,6 +699,34 @@ func (p *parser) parseArgs() ([]Expr, error) {
 		args = append(args, arg)
 	}
 	return args, nil
+}
+
+func (p *parser) parseFieldInits() ([]FieldInit, error) {
+	var fields []FieldInit
+	for !p.check(lexer.TokRBrace) && !p.check(lexer.TokEOF) {
+		if len(fields) > 0 {
+			if _, err := p.expect(lexer.TokComma); err != nil {
+				return nil, err
+			}
+		}
+		if p.check(lexer.TokRBrace) {
+			break // trailing comma
+		}
+		name, err := p.expect(lexer.TokIdent)
+		if err != nil {
+			return nil, err
+		}
+		colon, err := p.expect(lexer.TokColon)
+		if err != nil {
+			return nil, err
+		}
+		value, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, FieldInit{Name: name, Colon: colon, Value: value})
+	}
+	return fields, nil
 }
 
 func (p *parser) parseMustArms() ([]MustArm, error) {

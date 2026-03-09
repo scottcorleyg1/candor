@@ -354,6 +354,119 @@ fn main() -> unit {
 }`)
 }
 
+// ── effects in control flow ───────────────────────────────────────────────────
+
+func TestPureCannotCallIoInIfBranch(t *testing.T) {
+	mustFail(t, `
+fn f(cond: bool) -> unit pure {
+    if cond { print("bad") }
+    return unit
+}`, "pure function cannot call")
+}
+
+func TestPureCannotCallIoInLoop(t *testing.T) {
+	mustFail(t, `
+fn f() -> unit pure {
+    loop { print("bad") break }
+    return unit
+}`, "pure function cannot call")
+}
+
+func TestEffectsInBothBranches(t *testing.T) {
+	mustCompile(t, `
+fn log(s: str) -> unit effects(io) {
+    if true { print(s) }
+    else { print(s) }
+    return unit
+}`)
+}
+
+func TestEffectsOnlyInOneBranch(t *testing.T) {
+	// Declaring effects(io) allows IO in only one branch — that's fine
+	mustCompile(t, `
+fn log_if(cond: bool, s: str) -> unit effects(io) {
+    if cond { print(s) }
+    return unit
+}`)
+}
+
+func TestPureCalleeMayCallPure(t *testing.T) {
+	mustCompile(t, `
+fn id(x: u32) -> u32 pure { return x }
+fn wrap(x: u32) -> u32 pure { return id(x) }
+`)
+}
+
+// ── error recovery ────────────────────────────────────────────────────────────
+
+func TestMultipleErrors(t *testing.T) {
+	_, err := compile(`fn f() -> unit {
+    let x: bool = 42
+    let y: u32 = true
+    return unit
+}`)
+	if err == nil {
+		t.Fatal("expected errors")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "type mismatch") {
+		t.Errorf("expected 'type mismatch' in error, got: %s", msg)
+	}
+	// Should report both errors (two newlines = two errors reported)
+	errCount := strings.Count(msg, "type mismatch")
+	if errCount < 2 {
+		t.Errorf("expected at least 2 type mismatch errors, got %d in:\n%s", errCount, msg)
+	}
+}
+
+// ── contracts ─────────────────────────────────────────────────────────────────
+
+func TestRequiresClause(t *testing.T) {
+	mustCompile(t, `fn f(x: u32) -> u32 requires x > 0 { return x }`)
+}
+
+func TestEnsuresClause(t *testing.T) {
+	mustCompile(t, `fn f(x: u32) -> u32 ensures result > 0 { return x + 1 }`)
+}
+
+func TestAssertStmt(t *testing.T) {
+	mustCompile(t, `fn f(x: u32) -> u32 { assert x > 0 return x }`)
+}
+
+func TestRequiresNotBool(t *testing.T) {
+	mustFail(t, `fn f(x: u32) -> u32 requires x { return x }`, "contract clause must be bool")
+}
+
+func TestAssertNotBool(t *testing.T) {
+	mustFail(t, `fn f(x: u32) -> u32 { assert x return x }`, "assert requires bool")
+}
+
+// ── struct literals ───────────────────────────────────────────────────────────
+
+func TestStructLiteral(t *testing.T) {
+	mustCompile(t, `
+struct Point { x: u32, y: u32 }
+fn f() -> Point { return Point { x: 3, y: 4 } }`)
+}
+
+func TestStructLiteralMissingField(t *testing.T) {
+	mustFail(t, `
+struct Point { x: u32, y: u32 }
+fn f() -> Point { return Point { x: 3 } }`, "missing field")
+}
+
+func TestStructLiteralUnknownField(t *testing.T) {
+	mustFail(t, `
+struct Point { x: u32 }
+fn f() -> Point { return Point { x: 1, z: 2 } }`, "unknown field")
+}
+
+func TestStructLiteralTypeMismatch(t *testing.T) {
+	mustFail(t, `
+struct Point { x: u32 }
+fn f() -> Point { return Point { x: true } }`, "type mismatch")
+}
+
 // ── struct field assignment ───────────────────────────────────────────────────
 
 func TestFieldAssign(t *testing.T) {

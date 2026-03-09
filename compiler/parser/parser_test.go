@@ -495,6 +495,37 @@ func TestNoAnnotation(t *testing.T) {
 	}
 }
 
+// ── Struct literals ───────────────────────────────────────────────────────────
+
+func TestStructLiteral(t *testing.T) {
+	file := parse(t, `
+struct Point { x: u32, y: u32 }
+fn f() -> Point { return Point { x: 3, y: 4 } }`)
+	fn := file.Decls[1].(*FnDecl)
+	ret := fn.Body.Stmts[0].(*ReturnStmt)
+	lit, ok := ret.Value.(*StructLitExpr)
+	if !ok {
+		t.Fatalf("expected *StructLitExpr, got %T", ret.Value)
+	}
+	if lit.TypeName.Lexeme != "Point" {
+		t.Errorf("type name: want Point, got %q", lit.TypeName.Lexeme)
+	}
+	if len(lit.Fields) != 2 {
+		t.Errorf("fields: want 2, got %d", len(lit.Fields))
+	}
+}
+
+func TestStructLiteralInIf(t *testing.T) {
+	// PascalCase struct literal as if condition should not cause issues;
+	// lowercase variable followed by block should not be a struct literal.
+	parse(t, `
+struct Res { flag: bool }
+fn f(cond: bool) -> unit {
+    if cond { return unit }
+    return unit
+}`)
+}
+
 // ── Field assignment ──────────────────────────────────────────────────────────
 
 func TestFieldAssignStmt(t *testing.T) {

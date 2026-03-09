@@ -312,6 +312,39 @@ func TestNoAnnotationNoComment(t *testing.T) {
 	assertNotContains(t, out, "/* effects")
 }
 
+// ── contracts ─────────────────────────────────────────────────────────────────
+
+func TestRequiresEmission(t *testing.T) {
+	out := pipeline(t, `fn f(x: u32) -> u32 requires x > 0 { return x }`)
+	assertContains(t, out, "#include <assert.h>")
+	assertContains(t, out, "assert((x > 0))")
+}
+
+func TestEnsuresEmission(t *testing.T) {
+	out := pipeline(t, `fn f(x: u32) -> u32 ensures result > 0 { return x + 1 }`)
+	assertContains(t, out, "_cnd_result")
+	assertContains(t, out, "assert((_cnd_result > 0))")
+}
+
+func TestAssertStmtEmission(t *testing.T) {
+	out := pipeline(t, `fn f(x: u32) -> u32 { assert x > 0 return x }`)
+	assertContains(t, out, "assert((x > 0))")
+}
+
+// ── struct literals ───────────────────────────────────────────────────────────
+
+func TestStructLiteralEmission(t *testing.T) {
+	src := `
+struct Point { x: u32, y: u32 }
+fn f() -> Point { return Point { x: 3, y: 4 } }
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, ".x = 3")
+	assertContains(t, out, ".y = 4")
+	assertContains(t, out, "(Point){")
+}
+
 // ── field assignment ──────────────────────────────────────────────────────────
 
 func TestFieldAssign(t *testing.T) {
