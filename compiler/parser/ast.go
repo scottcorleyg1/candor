@@ -136,6 +136,19 @@ type BreakStmt struct {
 func (s *BreakStmt) Pos() lexer.Token { return s.BreakTok }
 func (s *BreakStmt) stmtNode()        {}
 
+// ForStmt: for name in collection { body }
+// Collection must be vec<T> or ring<T>; name is bound to element type T.
+type ForStmt struct {
+	ForTok     lexer.Token
+	Var        lexer.Token
+	InTok      lexer.Token
+	Collection Expr
+	Body       *BlockStmt
+}
+
+func (s *ForStmt) Pos() lexer.Token { return s.ForTok }
+func (s *ForStmt) stmtNode()        {}
+
 // AssignStmt: name = value  (requires mutable binding)
 type AssignStmt struct {
 	Name  lexer.Token

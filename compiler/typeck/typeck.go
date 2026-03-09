@@ -323,6 +323,8 @@ func (c *checker) checkStmt(stmt parser.Stmt, sc *scope, retType Type) error {
 		return c.checkIfStmt(s, sc, retType)
 	case *parser.LoopStmt:
 		return c.checkBlock(s.Body, sc, retType)
+	case *parser.ForStmt:
+		return c.checkForStmt(s, sc, retType)
 	case *parser.BreakStmt:
 		return nil
 	case *parser.BlockStmt:
@@ -537,6 +539,14 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 			switch ident.Tok.Type {
 			case lexer.TokOk, lexer.TokErr, lexer.TokSome, lexer.TokNone:
 				return c.inferConstructorCall(e, ident, sc, hint)
+			}
+			switch ident.Tok.Lexeme {
+			case "vec_new":
+				return c.inferVecNew(e, ident, sc, hint)
+			case "vec_push":
+				return c.inferVecPush(e, ident, sc)
+			case "vec_len":
+				return c.inferVecLen(e, ident, sc)
 			}
 		}
 		return c.inferCallExpr(e, sc)
@@ -963,6 +973,67 @@ func (c *checker) checkPattern(pattern parser.Expr, matchedType Type, sc *scope)
 	return armSc, nil
 }
 
+// ── vec built-in functions ────────────────────────────────────────────────────
+
+func (c *checker) inferVecNew(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
+	if len(e.Args) != 0 {
+		return nil, c.errorf(e.LParen, "vec_new() takes no arguments")
+	}
+	var elemType Type
+	if gen, ok := hint.(*GenType); ok && gen.Con == "vec" && len(gen.Params) > 0 {
+		elemType = gen.Params[0]
+	}
+	if elemType == nil {
+		return nil, c.errorf(fn.Tok, "vec_new() requires a type annotation to infer element type")
+	}
+	t := &GenType{Con: "vec", Params: []Type{elemType}}
+	c.record(fn, t)
+	return t, nil
+}
+
+func (c *checker) inferVecPush(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 2 {
+		return nil, c.errorf(e.LParen, "vec_push() takes 2 arguments: (vec, value)")
+	}
+	vecType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := vecType.(*GenType)
+	if !ok || gen.Con != "vec" || len(gen.Params) == 0 {
+		return nil, c.errorf(e.Args[0].Pos(), "vec_push() first argument must be vec<T>, got %s", vecType)
+	}
+	elemType := gen.Params[0]
+	valType, err := c.checkExpr(e.Args[1], sc, elemType)
+	if err != nil {
+		return nil, err
+	}
+	coerced, ok := Coerce(valType, elemType)
+	if !ok {
+		return nil, c.errorf(e.Args[1].Pos(),
+			"vec_push() value type %s does not match vec element type %s", valType, elemType)
+	}
+	c.exprTypes[e.Args[1]] = coerced
+	c.record(fn, TUnit)
+	return TUnit, nil
+}
+
+func (c *checker) inferVecLen(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "vec_len() takes 1 argument")
+	}
+	vecType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := vecType.(*GenType)
+	if !ok || (gen.Con != "vec" && gen.Con != "ring") {
+		return nil, c.errorf(e.Args[0].Pos(), "vec_len() requires vec<T> or ring<T>, got %s", vecType)
+	}
+	c.record(fn, TU64)
+	return TU64, nil
+}
+
 func (c *checker) inferConstructorCall(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
 	switch fn.Tok.Type {
 	case lexer.TokSome:
@@ -1043,6 +1114,22 @@ func (c *checker) inferConstructorCall(e *parser.CallExpr, fn *parser.IdentExpr,
 		return t, nil
 	}
 	return nil, fmt.Errorf("unreachable constructor")
+}
+
+func (c *checker) checkForStmt(s *parser.ForStmt, sc *scope, retType Type) error {
+	collType, err := c.checkExpr(s.Collection, sc, nil)
+	if err != nil {
+		return err
+	}
+	gen, ok := collType.(*GenType)
+	if !ok || (gen.Con != "vec" && gen.Con != "ring") || len(gen.Params) == 0 {
+		return c.errorf(s.ForTok, "for..in requires vec<T> or ring<T>, got %s", collType)
+	}
+	elemType := gen.Params[0]
+	// Create a scope with the element variable bound, then check the body.
+	forSc := newScope(sc)
+	forSc.define(s.Var.Lexeme, elemType)
+	return c.checkBlock(s.Body, forSc, retType)
 }
 
 func (c *checker) checkAssertStmt(s *parser.AssertStmt, sc *scope) error {

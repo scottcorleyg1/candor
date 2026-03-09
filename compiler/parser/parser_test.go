@@ -577,6 +577,24 @@ fn f() -> unit {
 	}
 }
 
+// ── for loops ────────────────────────────────────────────────────────────────
+
+func TestForStmt(t *testing.T) {
+	file := parse(t, `fn f(v: vec<u32>) -> unit { for x in v { return unit } return unit }`)
+	fn := file.Decls[0].(*FnDecl)
+	fs, ok := fn.Body.Stmts[0].(*ForStmt)
+	if !ok {
+		t.Fatalf("stmt[0] must be *ForStmt, got %T", fn.Body.Stmts[0])
+	}
+	if fs.Var.Lexeme != "x" {
+		t.Errorf("var: want 'x', got %q", fs.Var.Lexeme)
+	}
+	coll, ok := fs.Collection.(*IdentExpr)
+	if !ok || coll.Tok.Lexeme != "v" {
+		t.Errorf("collection: want IdentExpr 'v', got %T", fs.Collection)
+	}
+}
+
 // ── Error cases ───────────────────────────────────────────────────────────────
 
 func TestMissingReturnType(t *testing.T) {

@@ -62,11 +62,17 @@ func (e *emitter) writeln(s string)            { e.sb.WriteString(s); e.sb.Write
 func (e *emitter) emitFile(file *parser.File) error {
 	e.writeln("#include <stdint.h>")
 	e.writeln("#include <stdio.h>")
+	e.writeln("#include <stdlib.h>")
 	e.writeln("#include <assert.h>")
 	e.writeln("")
 
 	// Emit result<T,E> struct typedefs used in this file.
 	if err := e.emitResultStructs(); err != nil {
+		return err
+	}
+
+	// Emit vec<T> struct typedefs and push helpers used in this file.
+	if err := e.emitVecStructs(); err != nil {
 		return err
 	}
 
@@ -107,6 +113,52 @@ func (e *emitter) emitFile(file *parser.File) error {
 		}
 	}
 
+	return nil
+}
+
+func (e *emitter) vecElemMangle(inner string) string {
+	r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_")
+	return r.Replace(inner)
+}
+
+func (e *emitter) vecTypeName(elemC string) string {
+	return "_CndVec_" + e.vecElemMangle(elemC)
+}
+
+func (e *emitter) vecPushName(elemC string) string {
+	return "_cnd_vec_push_" + e.vecElemMangle(elemC)
+}
+
+func (e *emitter) emitVecStructs() error {
+	seen := map[string]bool{}
+	for _, t := range e.res.ExprTypes {
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "vec" || len(gen.Params) != 1 {
+			continue
+		}
+		elemC, err := e.cType(gen.Params[0])
+		if err != nil {
+			continue
+		}
+		name := e.vecTypeName(elemC)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		pushFn := e.vecPushName(elemC)
+		e.writef("typedef struct { %s* _data; uint64_t _len; uint64_t _cap; } %s;\n", elemC, name)
+		e.writef("static inline void %s(%s* v, %s val) {\n", pushFn, name, elemC)
+		e.writef("    if (v->_len >= v->_cap) {\n")
+		e.writef("        uint64_t _nc = v->_cap ? v->_cap * 2 : 4;\n")
+		e.writef("        v->_data = (%s*)realloc(v->_data, _nc * sizeof(%s));\n", elemC, elemC)
+		e.writef("        v->_cap = _nc;\n")
+		e.writef("    }\n")
+		e.writef("    v->_data[v->_len++] = val;\n")
+		e.writef("}\n")
+	}
+	if len(seen) > 0 {
+		e.writeln("")
+	}
 	return nil
 }
 
@@ -471,9 +523,44 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 		}
 		e.writef("%sassert(%s);\n", ind, eb.String())
 
+	case *parser.ForStmt:
+		return e.emitForStmt(s, depth)
+
 	default:
 		return fmt.Errorf("unhandled Stmt %T", stmt)
 	}
+	return nil
+}
+
+func (e *emitter) emitForStmt(s *parser.ForStmt, depth int) error {
+	ind := indent(depth)
+	collType := e.res.ExprTypes[s.Collection]
+	gen := collType.(*typeck.GenType) // validated by typeck
+	elemC, err := e.cType(gen.Params[0])
+	if err != nil {
+		return err
+	}
+	collC, err := e.cType(collType)
+	if err != nil {
+		return err
+	}
+	var collB strings.Builder
+	if err := e.emitExpr(s.Collection, &collB); err != nil {
+		return err
+	}
+	collTmp := e.freshTmp()
+	iTmp := e.freshTmp()
+	e.writef("%s{\n", ind)
+	e.writef("%s    %s %s = %s;\n", ind, collC, collTmp, collB.String())
+	e.writef("%s    for (uint64_t %s = 0; %s < %s._len; %s++) {\n",
+		ind, iTmp, iTmp, collTmp, iTmp)
+	e.writef("%s        %s %s = %s._data[%s];\n",
+		ind, elemC, s.Var.Lexeme, collTmp, iTmp)
+	if err := e.emitBlock(s.Body, depth+2); err != nil {
+		return err
+	}
+	e.writef("%s    }\n", ind)
+	e.writef("%s}\n", ind)
 	return nil
 }
 
@@ -604,8 +691,20 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 		fmt.Fprintf(sb, "return %s", vb.String())
 
 	case *parser.CallExpr:
-		// Check for built-in print functions and emit printf directly.
+		// Check for built-in print functions and vec builtins.
 		if ident, ok := ex.Fn.(*parser.IdentExpr); ok {
+			// vec_new() emits a zero-initialised struct literal.
+			if ident.Tok.Lexeme == "vec_new" {
+				t := e.res.ExprTypes[ident]
+				if gen, ok2 := t.(*typeck.GenType); ok2 && gen.Con == "vec" {
+					elemC, err := e.cType(gen.Params[0])
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(sb, "(%s){ NULL, 0, 0 }", e.vecTypeName(elemC))
+					return nil
+				}
+			}
 			if handled, err := e.emitBuiltinCall(ident.Tok.Lexeme, ex.Args, sb); handled {
 				return err
 			}
@@ -674,6 +773,50 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 // emitBuiltinCall handles the print_* built-ins, emitting printf calls.
 // Returns (true, err) if the name was a built-in; (false, nil) otherwise.
 func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.Builder) (bool, error) {
+	// vec builtins — argument count varies
+	switch name {
+	case "vec_new":
+		// vec_new() — the type is recorded on the CallExpr's Fn ident
+		// We need the full call expression to get the type; handled via the parent CallExpr.
+		// This path won't be reached (emitExpr handles CallExpr specially before here).
+		return false, nil
+
+	case "vec_push":
+		// vec_push(v, val) → _cnd_vec_push_T(&(v), val)
+		if len(args) != 2 {
+			return false, nil
+		}
+		vecType, ok := e.res.ExprTypes[args[0]].(*typeck.GenType)
+		if !ok || vecType.Con != "vec" || len(vecType.Params) == 0 {
+			return false, nil
+		}
+		elemC, err := e.cType(vecType.Params[0])
+		if err != nil {
+			return true, err
+		}
+		var vb, valb strings.Builder
+		if err := e.emitExpr(args[0], &vb); err != nil {
+			return true, err
+		}
+		if err := e.emitExpr(args[1], &valb); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb, "%s(&(%s), %s)", e.vecPushName(elemC), vb.String(), valb.String())
+		return true, nil
+
+	case "vec_len":
+		// vec_len(v) → (v)._len
+		if len(args) != 1 {
+			return false, nil
+		}
+		var vb strings.Builder
+		if err := e.emitExpr(args[0], &vb); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb, "(%s)._len", vb.String())
+		return true, nil
+	}
+
 	if len(args) != 1 {
 		return false, nil
 	}
@@ -995,7 +1138,15 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 				}
 				return inner + "*", nil
 			}
-		case "vec", "ring":
+		case "vec":
+			if len(tt.Params) == 1 {
+				inner, err := e.cType(tt.Params[0])
+				if err != nil {
+					return "", err
+				}
+				return e.vecTypeName(inner), nil
+			}
+		case "ring":
 			if len(tt.Params) == 1 {
 				inner, err := e.cType(tt.Params[0])
 				if err != nil {

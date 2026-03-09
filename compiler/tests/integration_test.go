@@ -536,6 +536,59 @@ fn main() -> unit {
 	}
 }
 
+// TestForLoopProgram verifies for..in over a vec compiles and produces correct output.
+func TestForLoopProgram(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn main() -> unit {
+    let mut v: vec<u32> = vec_new()
+    vec_push(v, 10)
+    vec_push(v, 20)
+    vec_push(v, 30)
+    let mut sum: u32 = 0
+    for x in v { sum = sum + x }
+    print_u32(sum)
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "for_loop", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("binary failed: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "60\n" {
+		t.Errorf("stdout: got %q, want %q", got, "60\n")
+	}
+}
+
+// TestVecLenProgram verifies vec_len returns the correct count.
+func TestVecLenProgram(t *testing.T) {
+	skipIfNoCC(t)
+	// vec_len returns u64; compare against a u64 literal and print a bool.
+	src := `
+fn main() -> unit {
+    let mut v: vec<u32> = vec_new()
+    vec_push(v, 1)
+    vec_push(v, 2)
+    vec_push(v, 3)
+    print_bool(vec_len(v) == 3)
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "vec_len", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("binary failed: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "true\n" {
+		t.Errorf("stdout: got %q, want %q", got, "true\n")
+	}
+}
+
 // TestEmittedCIsValidC verifies the C output for the acceptance criterion
 // contains no obvious invalid patterns.
 func TestEmittedCIsValidC(t *testing.T) {

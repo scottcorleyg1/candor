@@ -523,3 +523,59 @@ fn f(x: option<u32>) -> u32 {
     }
 }`)
 }
+
+// ── for loops and vec builtins ────────────────────────────────────────────────
+
+func TestForLoop(t *testing.T) {
+	mustCompile(t, `
+fn sum(v: vec<u32>) -> u32 {
+    let mut acc: u32 = 0
+    for x in v { acc = acc + x }
+    return acc
+}`)
+}
+
+func TestForLoopNotVec(t *testing.T) {
+	mustFail(t, `fn f(x: u32) -> unit { for i in x { } return unit }`, "for..in requires vec")
+}
+
+func TestVecNew(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let mut v: vec<u32> = vec_new()
+    return unit
+}`)
+}
+
+func TestVecNewNoAnnotation(t *testing.T) {
+	mustFail(t, `fn f() -> unit { let v = vec_new() return unit }`, "requires a type annotation")
+}
+
+func TestVecPush(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let mut v: vec<u32> = vec_new()
+    vec_push(v, 42)
+    return unit
+}`)
+}
+
+func TestVecPushTypeMismatch(t *testing.T) {
+	mustFail(t, `
+fn f() -> unit {
+    let mut v: vec<u32> = vec_new()
+    vec_push(v, true)
+    return unit
+}`, "does not match vec element type")
+}
+
+func TestVecLen(t *testing.T) {
+	mustCompile(t, `
+fn f(v: vec<u32>) -> u64 {
+    return vec_len(v)
+}`)
+}
+
+func TestVecLenNotVec(t *testing.T) {
+	mustFail(t, `fn f(x: u32) -> u64 { return vec_len(x) }`, "requires vec<T>")
+}

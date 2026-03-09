@@ -368,6 +368,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 		return p.parseIfStmt()
 	case lexer.TokLoop:
 		return p.parseLoopStmt()
+	case lexer.TokFor:
+		return p.parseForStmt()
 	case lexer.TokBreak:
 		return &BreakStmt{BreakTok: p.advance()}, nil
 	case lexer.TokAssert:
@@ -501,6 +503,27 @@ func (p *parser) parseLoopStmt() (*LoopStmt, error) {
 		return nil, err
 	}
 	return &LoopStmt{LoopTok: loopTok, Body: body}, nil
+}
+
+func (p *parser) parseForStmt() (*ForStmt, error) {
+	forTok := p.advance() // consume 'for'
+	varTok, err := p.expect(lexer.TokIdent)
+	if err != nil {
+		return nil, err
+	}
+	inTok, err := p.expect(lexer.TokIn)
+	if err != nil {
+		return nil, err
+	}
+	coll, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &ForStmt{ForTok: forTok, Var: varTok, InTok: inTok, Collection: coll, Body: body}, nil
 }
 
 func (p *parser) parseExprStmt() (Stmt, error) {
