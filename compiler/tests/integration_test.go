@@ -625,6 +625,63 @@ fn main() -> unit {
 	}
 }
 
+// TestHigherOrderFunction verifies named functions passed as arguments and
+// called through a function-typed parameter produce correct output.
+func TestHigherOrderFunction(t *testing.T) {
+	skipIfNoCC(t)
+
+	src := `
+fn twice(x: i64) -> i64 { return x * 2 }
+fn square(x: i64) -> i64 { return x * x }
+fn apply(f: fn(i64) -> i64, x: i64) -> i64 { return f(x) }
+
+fn main() -> unit {
+    print_int(apply(twice, 5))
+    print_int(apply(square, 4))
+    let f: fn(i64) -> i64 = twice
+    print_int(f(7))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "higher_order", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("binary failed: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "10\n16\n14\n" {
+		t.Errorf("stdout: got %q, want %q", got, "10\n16\n14\n")
+	}
+}
+
+// TestFnReturnValue verifies a function can return another function as a
+// value and it can be called through the result.
+func TestFnReturnValue(t *testing.T) {
+	skipIfNoCC(t)
+
+	src := `
+fn triple(x: i64) -> i64 { return x * 3 }
+fn get_fn() -> fn(i64) -> i64 { return triple }
+
+fn main() -> unit {
+    let f = get_fn()
+    print_int(f(6))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "fn_return", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("binary failed: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "18\n" {
+		t.Errorf("stdout: got %q, want %q", got, "18\n")
+	}
+}
+
 // TestEmittedCIsValidC verifies the C output for the acceptance criterion
 // contains no obvious invalid patterns.
 func TestEmittedCIsValidC(t *testing.T) {

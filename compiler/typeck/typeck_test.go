@@ -733,3 +733,67 @@ fn f(v: vec<u32>) -> u64 {
 func TestVecLenNotVec(t *testing.T) {
 	mustFail(t, `fn f(x: u32) -> u64 { return vec_len(x) }`, "requires vec<T>")
 }
+
+// ── first-class functions (non-capturing) ─────────────────────────────────────
+
+func TestFnAsArgument(t *testing.T) {
+	mustCompile(t, `
+fn double(x: i64) -> i64 { return x * 2 }
+fn apply(f: fn(i64) -> i64, x: i64) -> i64 { return f(x) }
+fn main() -> unit {
+    let result = apply(double, 5)
+    return unit
+}`)
+}
+
+func TestFnAsVariable(t *testing.T) {
+	mustCompile(t, `
+fn inc(x: i64) -> i64 { return x + 1 }
+fn main() -> unit {
+    let f: fn(i64) -> i64 = inc
+    let y = f(10)
+    return unit
+}`)
+}
+
+func TestFnAsReturnValue(t *testing.T) {
+	mustCompile(t, `
+fn double(x: i64) -> i64 { return x * 2 }
+fn get_double() -> fn(i64) -> i64 { return double }
+fn main() -> unit {
+    let f = get_double()
+    let y = f(7)
+    return unit
+}`)
+}
+
+func TestFnTypeMismatch(t *testing.T) {
+	mustFail(t, `
+fn add(a: i64, b: i64) -> i64 { return a + b }
+fn apply(f: fn(i64) -> i64, x: i64) -> i64 { return f(x) }
+fn main() -> unit {
+    let result = apply(add, 5)
+    return unit
+}`, "cannot use")
+}
+
+func TestFnCallThroughVariable(t *testing.T) {
+	mustCompile(t, `
+fn square(x: i64) -> i64 { return x * x }
+fn main() -> unit {
+    let f: fn(i64) -> i64 = square
+    let a = f(3)
+    let b = f(4)
+    return unit
+}`)
+}
+
+func TestFnZeroArgType(t *testing.T) {
+	mustCompile(t, `
+fn answer() -> i64 { return 42 }
+fn call(f: fn() -> i64) -> i64 { return f() }
+fn main() -> unit {
+    let x = call(answer)
+    return unit
+}`)
+}

@@ -92,6 +92,12 @@ func (e *emitter) emitFile(file *parser.File) error {
 		}
 	}
 
+	// Emit fn(...)->... function pointer typedefs after structs are defined,
+	// since fn types may reference struct types in their parameter/return types.
+	if err := e.emitFnTypeTypedefs(); err != nil {
+		return err
+	}
+
 	// Forward-declare all functions.
 	for _, decl := range file.Decls {
 		if d, ok := decl.(*parser.FnDecl); ok {
@@ -127,6 +133,125 @@ func (e *emitter) vecTypeName(elemC string) string {
 
 func (e *emitter) vecPushName(elemC string) string {
 	return "_cnd_vec_push_" + e.vecElemMangle(elemC)
+}
+
+// ── fn(...)->... typedef helpers ──────────────────────────────────────────────
+
+func (e *emitter) fnTypeMangle(s string) string {
+	r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_")
+	return r.Replace(s)
+}
+
+// fnTypeName returns the typedef name for a function pointer type.
+// e.g. fn(i64, bool)->u32 → _cnd_fn_int64_t_int_ret_uint32_t
+func (e *emitter) fnTypeName(ft *typeck.FnType) (string, error) {
+	ret, err := e.cType(ft.Ret)
+	if err != nil {
+		return "", err
+	}
+	if len(ft.Params) == 0 {
+		return "_cnd_fn__ret_" + e.fnTypeMangle(ret), nil
+	}
+	parts := make([]string, len(ft.Params))
+	for i, p := range ft.Params {
+		ct, err := e.cType(p)
+		if err != nil {
+			return "", err
+		}
+		parts[i] = e.fnTypeMangle(ct)
+	}
+	return "_cnd_fn_" + strings.Join(parts, "_") + "_ret_" + e.fnTypeMangle(ret), nil
+}
+
+// emitFnTypeTypedefs emits C typedef for every fn(...)->... type used in
+// the program. Dependencies (nested fn types) are emitted before dependents.
+func (e *emitter) emitFnTypeTypedefs() error {
+	// Collect all FnType instances reachable from ExprTypes and FnSig signatures.
+	byName := map[string]*typeck.FnType{}
+	var collect func(t typeck.Type)
+	collect = func(t typeck.Type) {
+		ft, ok := t.(*typeck.FnType)
+		if !ok {
+			return
+		}
+		name, err := e.fnTypeName(ft)
+		if err != nil || byName[name] != nil {
+			return
+		}
+		byName[name] = ft
+		for _, p := range ft.Params {
+			collect(p)
+		}
+		collect(ft.Ret)
+	}
+	for _, t := range e.res.ExprTypes {
+		collect(t)
+	}
+	for _, sig := range e.res.FnSigs {
+		for _, p := range sig.Params {
+			collect(p)
+		}
+		collect(sig.Ret)
+	}
+	if len(byName) == 0 {
+		return nil
+	}
+
+	// Emit in topological order: dependencies (inner fn types) before dependents.
+	emitted := map[string]bool{}
+	var emitOne func(name string, ft *typeck.FnType) error
+	emitOne = func(name string, ft *typeck.FnType) error {
+		if emitted[name] {
+			return nil
+		}
+		// Emit any fn-typed parameters first.
+		for _, p := range ft.Params {
+			if dep, ok := p.(*typeck.FnType); ok {
+				depName, err := e.fnTypeName(dep)
+				if err != nil {
+					return err
+				}
+				if err := emitOne(depName, dep); err != nil {
+					return err
+				}
+			}
+		}
+		if dep, ok := ft.Ret.(*typeck.FnType); ok {
+			depName, err := e.fnTypeName(dep)
+			if err != nil {
+				return err
+			}
+			if err := emitOne(depName, dep); err != nil {
+				return err
+			}
+		}
+		emitted[name] = true
+		ret, err := e.cType(ft.Ret)
+		if err != nil {
+			return err
+		}
+		if len(ft.Params) == 0 {
+			e.writef("typedef %s (*%s)(void);\n", ret, name)
+			return nil
+		}
+		params := make([]string, len(ft.Params))
+		for i, p := range ft.Params {
+			ct, err := e.cType(p)
+			if err != nil {
+				return err
+			}
+			params[i] = ct
+		}
+		e.writef("typedef %s (*%s)(%s);\n", ret, name, strings.Join(params, ", "))
+		return nil
+	}
+	for name, ft := range byName {
+		if err := emitOne(name, ft); err != nil {
+			return err
+		}
+	}
+	e.writeln("")
+	return nil
 }
 
 func (e *emitter) emitVecStructs() error {
@@ -1197,8 +1322,7 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 		return tt.Name, nil
 
 	case *typeck.FnType:
-		// Function pointer type — emitting inline is complex; use void* for now.
-		return "void*", nil
+		return e.fnTypeName(tt)
 	}
 
 	return "", fmt.Errorf("cannot map type %s to C", t)
