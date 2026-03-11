@@ -1,0 +1,72 @@
+## wordfreq.cnd - Word frequency counter
+## Usage: echo "some text" | ./wordfreq
+## or:    ./wordfreq  (reads stdin until EOF)
+##
+## Demonstrates: str[i], map<str,i64>, for k,v in map, str_substr, str builtins
+
+fn is_alpha(c: u8) -> bool pure {
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90)
+}
+
+fn to_lower(c: u8) -> u8 pure {
+    if c >= 65 and c <= 90 {
+        return c + 32
+    }
+    return c
+}
+
+fn extract_words(line: str, counts: map<str, i64>) -> unit {
+    let n = str_len(line)
+    let mut start: i64 = -1
+    let mut i: i64 = 0
+    loop {
+        if i > n { break }
+        let in_word: bool = i < n and is_alpha(line[i])
+        if in_word and start == -1 {
+            start = i
+        }
+        if not in_word and start != -1 {
+            let word_len = i - start
+            let raw = str_substr(line, start, word_len)
+            ## lowercase: rebuild char by char
+            let mut lower: str = ""
+            let mut j: i64 = 0
+            loop {
+                if j >= word_len { break }
+                let lc = to_lower(raw[j])
+                lower = str_concat(lower, str_from_u8(lc))
+                j = j + 1
+            }
+            let prev = map_get(counts, lower) must {
+                some(v) => v
+                none    => 0
+            }
+            map_insert(counts, lower, prev + 1)
+            start = -1
+        }
+        i = i + 1
+    }
+    return unit
+}
+
+fn main() -> unit {
+    let mut counts: map<str, i64> = map_new()
+    let mut total_words: i64 = 0
+
+    loop {
+        let line = try_read_line() must {
+            some(s) => s
+            none    => break
+        }
+        extract_words(line, counts)
+    }
+
+    ## Count total and print all words with their frequency
+    for word, freq in counts {
+        total_words = total_words + freq
+        print(str_concat(word, str_concat(": ", int_to_str(freq))))
+    }
+
+    print(str_concat("total words: ", int_to_str(total_words)))
+    return unit
+}

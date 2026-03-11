@@ -1300,6 +1300,17 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 				return err
 			}
 			sb.WriteByte(']')
+		} else if collType == typeck.TStr {
+			// str[i] → (uint8_t)((s)[i])
+			sb.WriteString("(uint8_t)((")
+			if err := e.emitExpr(ex.Collection, sb); err != nil {
+				return err
+			}
+			sb.WriteString(")[")
+			if err := e.emitExpr(ex.Index, sb); err != nil {
+				return err
+			}
+			sb.WriteString("])")
 		} else {
 			if err := e.emitExpr(ex.Collection, sb); err != nil {
 				return err
@@ -1600,6 +1611,28 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 		}
 	}
 
+	// Three-argument builtins.
+	if len(args) == 3 {
+		switch name {
+		case "str_substr":
+			// str_substr(s, start, len) -> str — heap copy of s[start..start+len]
+			var a0, a1, a2 strings.Builder
+			if err := e.emitExpr(args[0], &a0); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[1], &a1); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[2], &a2); err != nil {
+				return true, err
+			}
+			sb.WriteString(fmt.Sprintf(
+				"(__extension__ ({ const char* _b = (%s); int64_t _st = (%s); int64_t _ln = (%s); char* _r = (char*)malloc(_ln + 1); memcpy(_r, _b + _st, (size_t)_ln); _r[_ln] = '\\0'; (const char*)_r; }))",
+				a0.String(), a1.String(), a2.String()))
+			return true, nil
+		}
+	}
+
 	if len(args) != 1 {
 		return false, nil
 	}
@@ -1640,6 +1673,15 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			return true, err
 		}
 		sb.WriteByte(')')
+	case "str_from_u8":
+		// str_from_u8(c: u8) -> str  — heap-allocate a 1-char string
+		var argSB strings.Builder
+		if err := e.emitExpr(args[0], &argSB); err != nil {
+			return true, err
+		}
+		sb.WriteString(fmt.Sprintf(
+			"(__extension__ ({ uint8_t _c = (uint8_t)(%s); char* _s = (char*)malloc(2); _s[0] = (char)_c; _s[1] = '\\0'; (const char*)_s; }))",
+			argSB.String()))
 	case "str_to_int":
 		resType := &typeck.GenType{Con: "result", Params: []typeck.Type{typeck.TI64, typeck.TStr}}
 		structName, err := e.resultTypeName(resType)

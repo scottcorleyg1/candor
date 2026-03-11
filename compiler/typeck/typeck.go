@@ -354,9 +354,11 @@ var Builtins = map[string]*FnType{
 	"try_read_int":  {Params: []Type{}, Ret: &GenType{Con: "option", Params: []Type{TI64}}},
 	"try_read_f64":  {Params: []Type{}, Ret: &GenType{Con: "option", Params: []Type{TF64}}},
 	// String operations
-	"str_len":    {Params: []Type{TStr}, Ret: TI64},
-	"str_concat": {Params: []Type{TStr, TStr}, Ret: TStr},
-	"str_eq":     {Params: []Type{TStr, TStr}, Ret: TBool},
+	"str_len":      {Params: []Type{TStr}, Ret: TI64},
+	"str_concat":   {Params: []Type{TStr, TStr}, Ret: TStr},
+	"str_eq":       {Params: []Type{TStr, TStr}, Ret: TBool},
+	"str_from_u8":  {Params: []Type{TU8}, Ret: TStr},
+	"str_substr":   {Params: []Type{TStr, TI64, TI64}, Ret: TStr},
 	"int_to_str": {Params: []Type{TI64}, Ret: TStr},
 	"str_to_int": {Params: []Type{TStr}, Ret: &GenType{Con: "result", Params: []Type{TI64, TStr}}},
 	// File I/O — result<str, str> on error
@@ -1191,6 +1193,10 @@ func (c *checker) inferIndexExpr(e *parser.IndexExpr, sc *scope) (Type, error) {
 	}
 	if _, err := c.checkExpr(e.Index, sc, TU64); err != nil {
 		return nil, err
+	}
+	// str[i] → u8
+	if collType == TStr {
+		return TU8, nil
 	}
 	gen, ok := collType.(*GenType)
 	if !ok || (gen.Con != "vec" && gen.Con != "ring") || len(gen.Params) == 0 {
