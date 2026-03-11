@@ -74,16 +74,6 @@ func (e *emitter) emitFile(file *parser.File) error {
 		return err
 	}
 
-	// Emit vec<T> struct typedefs and push helpers used in this file.
-	if err := e.emitVecStructs(); err != nil {
-		return err
-	}
-
-	// Emit map<K,V> struct typedefs and operation helpers used in this file.
-	if err := e.emitMapStructs(); err != nil {
-		return err
-	}
-
 	// Forward-declare all structs first so they can reference each other.
 	for _, decl := range file.Decls {
 		if d, ok := decl.(*parser.StructDecl); ok {
@@ -107,6 +97,17 @@ func (e *emitter) emitFile(file *parser.File) error {
 				return err
 			}
 		}
+	}
+
+	// Emit vec<T> struct typedefs and push helpers after user structs/enums are
+	// defined, so that vec<UserStruct> elements are already known to the C compiler.
+	if err := e.emitVecStructs(); err != nil {
+		return err
+	}
+
+	// Emit map<K,V> struct typedefs and operation helpers after user structs/enums.
+	if err := e.emitMapStructs(); err != nil {
+		return err
 	}
 
 	// Emit fn(...)->... function pointer typedefs after structs are defined,
@@ -1088,9 +1089,7 @@ func (e *emitter) emitIfStmt(s *parser.IfStmt, depth int) error {
 	switch el := s.Else.(type) {
 	case *parser.IfStmt:
 		// else if — emit without leading indent (we already wrote "} else ")
-		var sub strings.Builder
-		sub.WriteString(indent(depth))
-		ee := &emitter{res: e.res, sb: sub, retIsUnit: e.retIsUnit, isMain: e.isMain}
+		ee := &emitter{res: e.res, retIsUnit: e.retIsUnit, isMain: e.isMain}
 		if err := ee.emitIfStmt(el, depth); err != nil {
 			return err
 		}
@@ -1584,6 +1583,19 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			}
 			sb.WriteString(") == 0)")
 			return true, nil
+		case "str_starts_with":
+			// str_starts_with(s, prefix) → strncmp(s, prefix, strlen(prefix)) == 0
+			var a0, a1 strings.Builder
+			if err := e.emitExpr(args[0], &a0); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[1], &a1); err != nil {
+				return true, err
+			}
+			sb.WriteString(fmt.Sprintf(
+				"(__extension__ ({ const char* _pfx = (%s); (strncmp(%s, _pfx, strlen(_pfx)) == 0); }))",
+				a1.String(), a0.String()))
+			return true, nil
 		case "write_file", "append_file":
 			resType := &typeck.GenType{Con: "result", Params: []typeck.Type{typeck.TUnit, typeck.TStr}}
 			structName, err := e.resultTypeName(resType)
@@ -1628,6 +1640,22 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			}
 			sb.WriteString(fmt.Sprintf(
 				"(__extension__ ({ const char* _b = (%s); int64_t _st = (%s); int64_t _ln = (%s); char* _r = (char*)malloc(_ln + 1); memcpy(_r, _b + _st, (size_t)_ln); _r[_ln] = '\\0'; (const char*)_r; }))",
+				a0.String(), a1.String(), a2.String()))
+			return true, nil
+		case "str_find":
+			// str_find(haystack, needle, start) -> option<i64> (i64* or NULL)
+			var a0, a1, a2 strings.Builder
+			if err := e.emitExpr(args[0], &a0); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[1], &a1); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[2], &a2); err != nil {
+				return true, err
+			}
+			sb.WriteString(fmt.Sprintf(
+				"(__extension__ ({ const char* _hay = (%s); const char* _ndl = (%s); int64_t _st = (%s); const char* _p = strstr(_hay + _st, _ndl); int64_t* _res = NULL; if (_p) { _res = (int64_t*)malloc(sizeof(int64_t)); *_res = (int64_t)(_p - _hay); } _res; }))",
 				a0.String(), a1.String(), a2.String()))
 			return true, nil
 		}

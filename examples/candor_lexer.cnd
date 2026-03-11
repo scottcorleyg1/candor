@@ -1,0 +1,362 @@
+## candor_lexer.cnd - A Candor lexer written in Candor
+## Reads source from stdin, prints tokens: LINE<TAB>KIND<TAB>LEXEME
+
+## ── token kind constants (comptime-folded) ───────────────────────────────────
+fn TK_IDENT()    -> i64 pure { return 1 }
+fn TK_INT()      -> i64 pure { return 2 }
+fn TK_STR()      -> i64 pure { return 3 }
+fn TK_PLUS()     -> i64 pure { return 4 }
+fn TK_MINUS()    -> i64 pure { return 5 }
+fn TK_STAR()     -> i64 pure { return 6 }
+fn TK_SLASH()    -> i64 pure { return 7 }
+fn TK_PERCENT()  -> i64 pure { return 8 }
+fn TK_EQEQ()     -> i64 pure { return 9 }
+fn TK_BANGEQ()   -> i64 pure { return 10 }
+fn TK_LT()       -> i64 pure { return 11 }
+fn TK_LTEQ()     -> i64 pure { return 12 }
+fn TK_GT()       -> i64 pure { return 13 }
+fn TK_GTEQ()     -> i64 pure { return 14 }
+fn TK_EQ()       -> i64 pure { return 15 }
+fn TK_ARROW()    -> i64 pure { return 16 }
+fn TK_LBRACE()   -> i64 pure { return 17 }
+fn TK_RBRACE()   -> i64 pure { return 18 }
+fn TK_LPAREN()   -> i64 pure { return 19 }
+fn TK_RPAREN()   -> i64 pure { return 20 }
+fn TK_LBRACKET() -> i64 pure { return 21 }
+fn TK_RBRACKET() -> i64 pure { return 22 }
+fn TK_COMMA()    -> i64 pure { return 23 }
+fn TK_COLON()    -> i64 pure { return 24 }
+fn TK_DOT()      -> i64 pure { return 25 }
+fn TK_AMP()      -> i64 pure { return 26 }
+fn TK_EOF()      -> i64 pure { return 27 }
+fn TK_ERROR()    -> i64 pure { return 28 }
+fn TK_KW()       -> i64 pure { return 100 }
+
+## ── char helpers ──────────────────────────────────────────────────────────────
+fn is_alpha(c: u8) -> bool pure {
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+}
+
+fn is_digit(c: u8) -> bool pure {
+    return c >= 48 and c <= 57
+}
+
+fn is_alnum(c: u8) -> bool pure {
+    return is_alpha(c) or is_digit(c)
+}
+
+## ── token and lexer structs ───────────────────────────────────────────────────
+struct Token {
+    kind:   i64
+    lexeme: str
+    line:   i64
+}
+
+struct Lexer {
+    src:     str
+    src_len: i64
+    pos:     i64
+    line:    i64
+}
+
+fn make_tok(kind: i64, lexeme: str, line: i64) -> Token {
+    return Token{ kind: kind, lexeme: lexeme, line: line }
+}
+
+## ── lexer primitives ─────────────────────────────────────────────────────────
+fn at_end(l: ref<Lexer>) -> bool {
+    return l.pos >= l.src_len
+}
+
+fn peek_c(l: ref<Lexer>) -> u8 {
+    if l.pos >= l.src_len { return 0 }
+    return l.src[l.pos]
+}
+
+fn peek2_c(l: ref<Lexer>) -> u8 {
+    if l.pos + 1 >= l.src_len { return 0 }
+    return l.src[l.pos + 1]
+}
+
+fn advance_c(l: refmut<Lexer>) -> u8 {
+    let c = l.src[l.pos]
+    l.pos = l.pos + 1
+    if c == 10 { l.line = l.line + 1 }
+    return c
+}
+
+## ── skip whitespace and ## comments ─────────────────────────────────────────
+fn skip_ws(l: refmut<Lexer>) -> unit {
+    loop {
+        if at_end(l) { break }
+        let c = peek_c(l)
+        if c == 32 or c == 9 or c == 13 or c == 10 {
+            advance_c(l)
+        } else if c == 35 and peek2_c(l) == 35 {
+            loop {
+                if at_end(l) { break }
+                let cc = advance_c(l)
+                if cc == 10 { break }
+            }
+        } else {
+            break
+        }
+    }
+    return unit
+}
+
+## ── keyword lookup ───────────────────────────────────────────────────────────
+fn make_kw_map() -> map<str, i64> {
+    let mut kw: map<str, i64> = map_new()
+    map_insert(kw, "fn",        101)
+    map_insert(kw, "let",       102)
+    map_insert(kw, "return",    103)
+    map_insert(kw, "if",        104)
+    map_insert(kw, "else",      105)
+    map_insert(kw, "match",     106)
+    map_insert(kw, "loop",      107)
+    map_insert(kw, "break",     108)
+    map_insert(kw, "for",       109)
+    map_insert(kw, "in",        110)
+    map_insert(kw, "struct",    111)
+    map_insert(kw, "enum",      112)
+    map_insert(kw, "pure",      113)
+    map_insert(kw, "effects",   114)
+    map_insert(kw, "requires",  115)
+    map_insert(kw, "ensures",   116)
+    map_insert(kw, "assert",    117)
+    map_insert(kw, "module",    118)
+    map_insert(kw, "use",       119)
+    map_insert(kw, "mut",       120)
+    map_insert(kw, "secret",    121)
+    map_insert(kw, "reveal",    122)
+    map_insert(kw, "move",      123)
+    map_insert(kw, "some",      124)
+    map_insert(kw, "none",      125)
+    map_insert(kw, "ok",        126)
+    map_insert(kw, "err",       127)
+    map_insert(kw, "true",      128)
+    map_insert(kw, "false",     129)
+    map_insert(kw, "and",       130)
+    map_insert(kw, "or",        131)
+    map_insert(kw, "not",       132)
+    map_insert(kw, "must",      133)
+    map_insert(kw, "extern",    134)
+    return kw
+}
+
+fn kw_name(k: i64) -> str {
+    if k == 101 { return "fn" }
+    if k == 102 { return "let" }
+    if k == 103 { return "return" }
+    if k == 104 { return "if" }
+    if k == 105 { return "else" }
+    if k == 106 { return "match" }
+    if k == 107 { return "loop" }
+    if k == 108 { return "break" }
+    if k == 109 { return "for" }
+    if k == 110 { return "in" }
+    if k == 111 { return "struct" }
+    if k == 112 { return "enum" }
+    if k == 113 { return "pure" }
+    if k == 114 { return "effects" }
+    if k == 115 { return "requires" }
+    if k == 116 { return "ensures" }
+    if k == 117 { return "assert" }
+    if k == 118 { return "module" }
+    if k == 119 { return "use" }
+    if k == 120 { return "mut" }
+    if k == 121 { return "secret" }
+    if k == 122 { return "reveal" }
+    if k == 123 { return "move" }
+    if k == 124 { return "some" }
+    if k == 125 { return "none" }
+    if k == 126 { return "ok" }
+    if k == 127 { return "err" }
+    if k == 128 { return "true" }
+    if k == 129 { return "false" }
+    if k == 130 { return "and" }
+    if k == 131 { return "or" }
+    if k == 132 { return "not" }
+    if k == 133 { return "must" }
+    if k == 134 { return "extern" }
+    return "KW?"
+}
+
+fn kind_name(k: i64) -> str {
+    if k == TK_IDENT()    { return "IDENT" }
+    if k == TK_INT()      { return "INT" }
+    if k == TK_STR()      { return "STR" }
+    if k == TK_PLUS()     { return "PLUS" }
+    if k == TK_MINUS()    { return "MINUS" }
+    if k == TK_STAR()     { return "STAR" }
+    if k == TK_SLASH()    { return "SLASH" }
+    if k == TK_PERCENT()  { return "PERCENT" }
+    if k == TK_EQEQ()     { return "EQEQ" }
+    if k == TK_BANGEQ()   { return "BANGEQ" }
+    if k == TK_LT()       { return "LT" }
+    if k == TK_LTEQ()     { return "LTEQ" }
+    if k == TK_GT()       { return "GT" }
+    if k == TK_GTEQ()     { return "GTEQ" }
+    if k == TK_EQ()       { return "EQ" }
+    if k == TK_ARROW()    { return "ARROW" }
+    if k == TK_LBRACE()   { return "LBRACE" }
+    if k == TK_RBRACE()   { return "RBRACE" }
+    if k == TK_LPAREN()   { return "LPAREN" }
+    if k == TK_RPAREN()   { return "RPAREN" }
+    if k == TK_LBRACKET() { return "LBRACKET" }
+    if k == TK_RBRACKET() { return "RBRACKET" }
+    if k == TK_COMMA()    { return "COMMA" }
+    if k == TK_COLON()    { return "COLON" }
+    if k == TK_DOT()      { return "DOT" }
+    if k == TK_AMP()      { return "AMP" }
+    if k == TK_EOF()      { return "EOF" }
+    if k >= 100           { return kw_name(k) }
+    return "ERROR"
+}
+
+## ── scanners ──────────────────────────────────────────────────────────────────
+fn scan_ident(l: refmut<Lexer>, kw: map<str, i64>) -> Token {
+    let start = l.pos
+    let line  = l.line
+    loop {
+        if at_end(l) { break }
+        if not is_alnum(peek_c(l)) { break }
+        advance_c(l)
+    }
+    let lexeme = str_substr(l.src, start, l.pos - start)
+    let kind = map_get(kw, lexeme) must {
+        some(k) => k
+        none    => TK_IDENT()
+    }
+    return make_tok(kind, lexeme, line)
+}
+
+fn scan_int(l: refmut<Lexer>) -> Token {
+    let start = l.pos
+    let line  = l.line
+    loop {
+        if at_end(l) { break }
+        if not is_digit(peek_c(l)) { break }
+        advance_c(l)
+    }
+    return make_tok(TK_INT(), str_substr(l.src, start, l.pos - start), line)
+}
+
+fn scan_str_lit(l: refmut<Lexer>) -> Token {
+    let line = l.line
+    let start = l.pos
+    advance_c(l)
+    loop {
+        if at_end(l) { break }
+        let c = advance_c(l)
+        if c == 34 { break }
+        if c == 92 {
+            if not at_end(l) { advance_c(l) }
+        }
+    }
+    return make_tok(TK_STR(), str_substr(l.src, start, l.pos - start), line)
+}
+
+fn scan_sym(l: refmut<Lexer>) -> Token {
+    let line = l.line
+    let c = advance_c(l)
+    if c == 43 { return make_tok(TK_PLUS(),     "+",  line) }
+    if c == 42 { return make_tok(TK_STAR(),     "*",  line) }
+    if c == 37 { return make_tok(TK_PERCENT(),  "%",  line) }
+    if c == 123 { return make_tok(TK_LBRACE(),  "{",  line) }
+    if c == 125 { return make_tok(TK_RBRACE(),  "}",  line) }
+    if c == 40  { return make_tok(TK_LPAREN(),  "(",  line) }
+    if c == 41  { return make_tok(TK_RPAREN(),  ")",  line) }
+    if c == 91  { return make_tok(TK_LBRACKET(),"[",  line) }
+    if c == 93  { return make_tok(TK_RBRACKET(),"]",  line) }
+    if c == 44  { return make_tok(TK_COMMA(),   ",",  line) }
+    if c == 58  { return make_tok(TK_COLON(),   ":",  line) }
+    if c == 46  { return make_tok(TK_DOT(),     ".",  line) }
+    if c == 38  { return make_tok(TK_AMP(),     "&",  line) }
+    if c == 47  { return make_tok(TK_SLASH(),   "/",  line) }
+    if c == 45 {
+        if peek_c(l) == 62 {
+            advance_c(l)
+            return make_tok(TK_ARROW(), "->", line)
+        }
+        return make_tok(TK_MINUS(), "-", line)
+    }
+    if c == 61 {
+        if peek_c(l) == 61 {
+            advance_c(l)
+            return make_tok(TK_EQEQ(), "==", line)
+        }
+        return make_tok(TK_EQ(), "=", line)
+    }
+    if c == 33 {
+        if peek_c(l) == 61 {
+            advance_c(l)
+            return make_tok(TK_BANGEQ(), "!=", line)
+        }
+        return make_tok(TK_ERROR(), "!", line)
+    }
+    if c == 60 {
+        if peek_c(l) == 61 {
+            advance_c(l)
+            return make_tok(TK_LTEQ(), "<=", line)
+        }
+        return make_tok(TK_LT(), "<", line)
+    }
+    if c == 62 {
+        if peek_c(l) == 61 {
+            advance_c(l)
+            return make_tok(TK_GTEQ(), ">=", line)
+        }
+        return make_tok(TK_GT(), ">", line)
+    }
+    return make_tok(TK_ERROR(), str_from_u8(c), line)
+}
+
+fn next_tok(l: refmut<Lexer>, kw: map<str, i64>) -> Token {
+    let c = peek_c(l)
+    if is_alpha(c)  { return scan_ident(l, kw) }
+    if is_digit(c)  { return scan_int(l) }
+    if c == 34      { return scan_str_lit(l) }
+    return scan_sym(l)
+}
+
+## ── lex entry point ───────────────────────────────────────────────────────────
+fn lex_source(src: str) -> vec<Token> {
+    let mut l: Lexer = Lexer{ src: src, src_len: str_len(src), pos: 0, line: 1 }
+    let kw = make_kw_map()
+    let mut tokens: vec<Token> = vec_new()
+    loop {
+        skip_ws(refmut(l))
+        if at_end(refmut(l)) { break }
+        let tok = next_tok(refmut(l), kw)
+        vec_push(tokens, tok)
+    }
+    vec_push(tokens, make_tok(TK_EOF(), "", l.line))
+    return tokens
+}
+
+## ── main ──────────────────────────────────────────────────────────────────────
+fn main() -> unit {
+    let mut src: str = ""
+    loop {
+        let line = try_read_line() must {
+            some(s) => s
+            none    => break
+        }
+        src = str_concat(src, str_concat(line, str_from_u8(10)))
+    }
+
+    let tokens = lex_source(src)
+    let n = vec_len(tokens)
+    let mut i: u64 = 0
+    loop {
+        if i >= n { break }
+        let tok = tokens[i]
+        print(str_concat(
+            int_to_str(tok.line),
+            str_concat("\t", str_concat(kind_name(tok.kind), str_concat("\t", tok.lexeme)))))
+        i = i + 1
+    }
+    return unit
+}

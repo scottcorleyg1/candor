@@ -206,6 +206,14 @@ func Coerce(src, dst Type) (Type, bool) {
 	if src.Equals(TNever) {
 		return dst, true
 	}
+	// refmut<T> coerces to ref<T> — a mutable reference satisfies a read-only reference parameter
+	if fgen, ok := src.(*GenType); ok && fgen.Con == "refmut" && len(fgen.Params) == 1 {
+		if tgen, ok := dst.(*GenType); ok && tgen.Con == "ref" && len(tgen.Params) == 1 {
+			if fgen.Params[0].Equals(tgen.Params[0]) {
+				return dst, true
+			}
+		}
+	}
 	return nil, false
 }
 
