@@ -322,6 +322,10 @@ var Builtins = map[string]*FnType{
 	"str_eq":     {Params: []Type{TStr, TStr}, Ret: TBool},
 	"int_to_str": {Params: []Type{TI64}, Ret: TStr},
 	"str_to_int": {Params: []Type{TStr}, Ret: &GenType{Con: "result", Params: []Type{TI64, TStr}}},
+	// File I/O — result<str, str> on error
+	"read_file":   {Params: []Type{TStr}, Ret: &GenType{Con: "result", Params: []Type{TStr, TStr}}},
+	"write_file":  {Params: []Type{TStr, TStr}, Ret: &GenType{Con: "result", Params: []Type{TUnit, TStr}}},
+	"append_file": {Params: []Type{TStr, TStr}, Ret: &GenType{Con: "result", Params: []Type{TUnit, TStr}}},
 }
 
 // BuiltinEffects records the known effects of built-in functions.
@@ -338,6 +342,9 @@ var BuiltinEffects = map[string]*parser.EffectsAnnotation{
 	"try_read_line":  {Kind: parser.EffectsDecl, Names: []string{"io"}},
 	"try_read_int":   {Kind: parser.EffectsDecl, Names: []string{"io"}},
 	"try_read_f64":   {Kind: parser.EffectsDecl, Names: []string{"io"}},
+	"read_file":   {Kind: parser.EffectsDecl, Names: []string{"io"}},
+	"write_file":  {Kind: parser.EffectsDecl, Names: []string{"io"}},
+	"append_file": {Kind: parser.EffectsDecl, Names: []string{"io"}},
 }
 
 func (c *checker) checkFile(file *parser.File) error {

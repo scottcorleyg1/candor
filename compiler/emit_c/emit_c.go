@@ -322,7 +322,12 @@ func (e *emitter) emitResultStructs() error {
 		if err != nil {
 			return err
 		}
-		e.writef("typedef struct { int _ok; %s _ok_val; %s _err_val; } %s;\n", okC, errC, name)
+		if okC == "void" {
+			// result<unit, E> — no ok_val field needed
+			e.writef("typedef struct { int _ok; %s _err_val; } %s;\n", errC, name)
+		} else {
+			e.writef("typedef struct { int _ok; %s _ok_val; %s _err_val; } %s;\n", okC, errC, name)
+		}
 	}
 	if len(seen) > 0 {
 		e.writeln("")
@@ -1146,6 +1151,30 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			}
 			sb.WriteString(") == 0)")
 			return true, nil
+		case "write_file", "append_file":
+			resType := &typeck.GenType{Con: "result", Params: []typeck.Type{typeck.TUnit, typeck.TStr}}
+			structName, err := e.resultTypeName(resType)
+			if err != nil {
+				return true, err
+			}
+			var a0SB, a1SB strings.Builder
+			if err := e.emitExpr(args[0], &a0SB); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[1], &a1SB); err != nil {
+				return true, err
+			}
+			helper := "_cnd_write_file"
+			failMsg := "write_file failed"
+			if name == "append_file" {
+				helper = "_cnd_append_file"
+				failMsg = "append_file failed"
+			}
+			sb.WriteString(fmt.Sprintf(
+				"(__extension__ ({ int _r = %s(%s, %s); "+
+					"_r == 0 ? (%s){ ._ok=1 } : (%s){ ._ok=0, ._err_val=\"%s\" }; }))",
+				helper, a0SB.String(), a1SB.String(), structName, structName, failMsg))
+			return true, nil
 		}
 	}
 
@@ -1210,6 +1239,21 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			return true, err
 		}
 		sb.WriteByte(')')
+	case "read_file":
+		resType := &typeck.GenType{Con: "result", Params: []typeck.Type{typeck.TStr, typeck.TStr}}
+		structName, err := e.resultTypeName(resType)
+		if err != nil {
+			return true, err
+		}
+		var argSB strings.Builder
+		if err := e.emitExpr(args[0], &argSB); err != nil {
+			return true, err
+		}
+		arg := argSB.String()
+		sb.WriteString(fmt.Sprintf(
+			"(__extension__ ({ const char* _r = _cnd_read_file(%s); "+
+				"_r ? (%s){ ._ok=1, ._ok_val=_r } : (%s){ ._ok=0, ._err_val=\"read_file failed\" }; }))",
+			arg, structName, structName))
 	default:
 		return false, nil
 	}
@@ -1279,6 +1323,35 @@ func (e *emitter) emitRuntimeHelpers() {
 	e.writeln("    char* _out = (char*)malloc(strlen(_buf) + 1);")
 	e.writeln("    strcpy(_out, _buf);")
 	e.writeln("    return _out;")
+	e.writeln("}")
+
+	// read_file: read entire file into a heap string. Returns NULL on error (used with result<str,str>).
+	e.writeln("static const char* _cnd_read_file(const char* path) {")
+	e.writeln("    FILE* _f = fopen(path, \"rb\");")
+	e.writeln("    if (!_f) { return NULL; }")
+	e.writeln("    fseek(_f, 0, SEEK_END); long _sz = ftell(_f); fseek(_f, 0, SEEK_SET);")
+	e.writeln("    char* _buf = (char*)malloc(_sz + 1);")
+	e.writeln("    if (!_buf) { fclose(_f); return NULL; }")
+	e.writeln("    fread(_buf, 1, _sz, _f); _buf[_sz] = '\\0';")
+	e.writeln("    fclose(_f); return _buf;")
+	e.writeln("}")
+
+	// write_file: write string to file (truncate). Returns 0 on success, -1 on error.
+	e.writeln("static int _cnd_write_file(const char* path, const char* data) {")
+	e.writeln("    FILE* _f = fopen(path, \"wb\");")
+	e.writeln("    if (!_f) { return -1; }")
+	e.writeln("    size_t _n = strlen(data);")
+	e.writeln("    int _ok = (fwrite(data, 1, _n, _f) == _n) ? 0 : -1;")
+	e.writeln("    fclose(_f); return _ok;")
+	e.writeln("}")
+
+	// append_file: append string to file. Returns 0 on success, -1 on error.
+	e.writeln("static int _cnd_append_file(const char* path, const char* data) {")
+	e.writeln("    FILE* _f = fopen(path, \"ab\");")
+	e.writeln("    if (!_f) { return -1; }")
+	e.writeln("    size_t _n = strlen(data);")
+	e.writeln("    int _ok = (fwrite(data, 1, _n, _f) == _n) ? 0 : -1;")
+	e.writeln("    fclose(_f); return _ok;")
 	e.writeln("}")
 }
 
@@ -1545,7 +1618,10 @@ func (e *emitter) patternCondAndBinding(pattern parser.Expr, xType typeck.Type, 
 						if err != nil {
 							return "", "", err
 						}
-						binding = fmt.Sprintf("%s %s = %s._ok_val;", ct, v.Tok.Lexeme, tmp)
+						// result<unit,E> has no _ok_val field — skip binding for void
+						if ct != "void" {
+							binding = fmt.Sprintf("%s %s = %s._ok_val;", ct, v.Tok.Lexeme, tmp)
+						}
 					}
 				}
 			}

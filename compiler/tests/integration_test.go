@@ -1154,3 +1154,98 @@ fn main() -> unit {
 		t.Fatalf("got %q, want %q", got, "60\n")
 	}
 }
+
+// ── File I/O integration tests ────────────────────────────────────────────────
+
+func TestReadFileRoundTrip(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn main() -> unit {
+    let wr = write_file("hello.txt", "candor works")
+    match wr {
+        ok(_u)  => print("wrote"),
+        err(e)  => print(e),
+    }
+    let rd = read_file("hello.txt")
+    match rd {
+        ok(content) => print(content),
+        err(e)      => print(e),
+    }
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "file_io", src)
+	cmd := exec.Command(bin)
+	cmd.Dir = dir // run in temp dir so hello.txt is created there
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "wrote\ncandor works\n" {
+		t.Fatalf("got %q, want %q", got, "wrote\ncandor works\n")
+	}
+}
+
+func TestAppendFileRoundTrip(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn main() -> unit {
+    let w = write_file("log.txt", "line1\n")
+    match w {
+        ok(_u) => print("ok1"),
+        err(e) => print(e),
+    }
+    let a = append_file("log.txt", "line2\n")
+    match a {
+        ok(_u) => print("ok2"),
+        err(e) => print(e),
+    }
+    let rd = read_file("log.txt")
+    match rd {
+        ok(content) => print(content),
+        err(e)      => print(e),
+    }
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "append_io", src)
+	cmd := exec.Command(bin)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "ok1\nok2\nline1\nline2\n\n" {
+		t.Fatalf("got %q, want %q", got, "ok1\nok2\nline1\nline2\n\n")
+	}
+}
+
+func TestReadFileMissing(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn main() -> unit {
+    let rd = read_file("does_not_exist.txt")
+    match rd {
+        ok(content) => print(content),
+        err(_e)     => print("missing"),
+    }
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "file_missing", src)
+	cmd := exec.Command(bin)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "missing\n" {
+		t.Fatalf("got %q, want %q", got, "missing\n")
+	}
+}

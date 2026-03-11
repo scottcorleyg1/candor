@@ -1072,3 +1072,71 @@ fn main() -> unit {
     return unit
 }`, "argument count")
 }
+
+// ── File I/O builtins ─────────────────────────────────────────────────────────
+
+func TestReadFileTypeChecks(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let r = read_file("test.txt")
+    return unit
+}`)
+}
+
+func TestWriteFileTypeChecks(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let r = write_file("test.txt", "hello")
+    return unit
+}`)
+}
+
+func TestAppendFileTypeChecks(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let r = append_file("test.txt", "hello")
+    return unit
+}`)
+}
+
+func TestReadFileReturnType(t *testing.T) {
+	// read_file returns result<str,str> — ok branch must yield str
+	mustCompile(t, `
+fn main() -> unit {
+    let r = read_file("test.txt")
+    match r {
+        ok(content) => print(content),
+        err(msg)    => print(msg),
+    }
+    return unit
+}`)
+}
+
+func TestWriteFileReturnType(t *testing.T) {
+	// write_file returns result<unit,str> — err branch must yield str
+	mustCompile(t, `
+fn main() -> unit {
+    let r = write_file("test.txt", "hello")
+    match r {
+        ok(_u)   => print("ok"),
+        err(msg) => print(msg),
+    }
+    return unit
+}`)
+}
+
+func TestReadFileWrongArgCount(t *testing.T) {
+	mustFail(t, `
+fn main() -> unit {
+    let r = read_file("a", "b")
+    return unit
+}`, "argument count")
+}
+
+func TestWriteFileWrongArgCount(t *testing.T) {
+	mustFail(t, `
+fn main() -> unit {
+    let r = write_file("a")
+    return unit
+}`, "argument count")
+}

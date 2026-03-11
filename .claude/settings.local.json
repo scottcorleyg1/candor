@@ -23,7 +23,26 @@
       "Bash(git add compiler/typeck/typeck.go compiler/emit_c/emit_c.go compiler/emit_c/emit_c_test.go compiler/tests/integration_test.go)",
       "Bash(go test ./tests/... -run=^$ -bench=. -benchmem -benchtime=3s)",
       "Bash(go test ./... -v)",
-      "Bash(go clean -testcache)"
+      "Bash(go clean -testcache)",
+      "Bash(git add compiler/)",
+      "Bash(go test ./... -count=1)",
+      "Bash(go test ./parser/... ./typeck/...)",
+      "Bash(go test ./typeck/... -run TestModuleEnforcementBadUseSymbol -v)",
+      "Bash(go test ./typeck/... -run \"TestFn\" -v)",
+      "Bash(d:/SWC/CandorSWC/compiler/typeck/typeck_test.go:*)",
+      "Bash(git add compiler/emit_c/emit_c.go compiler/parser/parser.go compiler/tests/integration_test.go compiler/typeck/typeck.go compiler/typeck/typeck_test.go)",
+      "Bash(go test github.com/scottcorleyg1/candor/compiler/...)",
+      "Bash(/d/SWC/CandorSWC/compiler/typeck/typeck_test.go:*)",
+      "Bash(go test ./typeck/... -run TestEnum -v)",
+      "Bash(/d/SWC/CandorSWC/compiler/tests/integration_test.go:*)",
+      "Bash(go test ./tests/... -run TestEnum -v)",
+      "Bash(git add compiler/lexer/token.go compiler/parser/ast.go compiler/parser/parser.go compiler/typeck/types.go compiler/typeck/typeck.go compiler/typeck/typeck_test.go compiler/emit_c/emit_c.go compiler/tests/integration_test.go)",
+      "Bash(git add lexer/token.go parser/ast.go parser/parser.go typeck/types.go typeck/typeck.go typeck/typeck_test.go emit_c/emit_c.go tests/integration_test.go)",
+      "Bash(go test ./typeck/... -run TestReadFile -v)",
+      "Bash(go test ./typeck/... -run TestWriteFile -v)",
+      "Bash(go test ./typeck/... -run TestAppendFile -v)",
+      "Bash(go test ./tests/... -run \"TestReadFile|TestAppendFile|TestWriteFile\" -v)",
+      "Bash(go test ./tests/... -run \"TestAppendFileRoundTrip\" -v)"
     ]
   }
 }
