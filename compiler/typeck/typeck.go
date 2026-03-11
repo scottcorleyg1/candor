@@ -47,6 +47,10 @@ type Result struct {
 	Enums map[string]*EnumType
 	// FnEffects maps function names to their effects annotation (may be nil).
 	FnEffects map[string]*parser.EffectsAnnotation
+	// ComptimeValues maps CallExpr nodes to their compile-time evaluated values.
+	// Only calls to pure (effects []) functions with all-constant args are included.
+	// Values are int64, float64, bool, string, or nil (unit).
+	ComptimeValues map[parser.Expr]interface{}
 }
 
 // Check type-checks a fully parsed File and returns a Result.
@@ -54,22 +58,26 @@ type Result struct {
 // enforced. Use CheckProgram for multi-file programs with enforcement.
 func Check(file *parser.File) (*Result, error) {
 	c := &checker{
-		exprTypes: make(map[parser.Expr]Type),
-		fnSigs:    make(map[string]*FnType),
-		structs:   make(map[string]*StructType),
-		enums:     make(map[string]*EnumType),
-		fnEffects: make(map[string]*parser.EffectsAnnotation),
+		exprTypes:    make(map[parser.Expr]Type),
+		fnSigs:       make(map[string]*FnType),
+		structs:      make(map[string]*StructType),
+		enums:        make(map[string]*EnumType),
+		fnEffects:    make(map[string]*parser.EffectsAnnotation),
+		fnDecls:      make(map[string]*parser.FnDecl),
+		comptimeVals: make(map[parser.Expr]interface{}),
 		// symModule intentionally nil — disables module enforcement
 	}
 	if err := c.checkFile(file); err != nil {
 		return nil, err
 	}
+	runComptimePass(c, []*parser.File{file})
 	return &Result{
-		ExprTypes: c.exprTypes,
-		FnSigs:    c.fnSigs,
-		Structs:   c.structs,
-		Enums:     c.enums,
-		FnEffects: c.fnEffects,
+		ExprTypes:      c.exprTypes,
+		FnSigs:         c.fnSigs,
+		Structs:        c.structs,
+		Enums:          c.enums,
+		FnEffects:      c.fnEffects,
+		ComptimeValues: c.comptimeVals,
 	}, nil
 }
 
@@ -79,22 +87,26 @@ func Check(file *parser.File) (*Result, error) {
 // Files with no module declaration share the root namespace (always accessible).
 func CheckProgram(files []*parser.File) (*Result, error) {
 	c := &checker{
-		exprTypes: make(map[parser.Expr]Type),
-		fnSigs:    make(map[string]*FnType),
-		structs:   make(map[string]*StructType),
-		enums:     make(map[string]*EnumType),
-		fnEffects: make(map[string]*parser.EffectsAnnotation),
-		symModule: make(map[string]string), // non-nil enables enforcement
+		exprTypes:    make(map[parser.Expr]Type),
+		fnSigs:       make(map[string]*FnType),
+		structs:      make(map[string]*StructType),
+		enums:        make(map[string]*EnumType),
+		fnEffects:    make(map[string]*parser.EffectsAnnotation),
+		fnDecls:      make(map[string]*parser.FnDecl),
+		comptimeVals: make(map[parser.Expr]interface{}),
+		symModule:    make(map[string]string), // non-nil enables enforcement
 	}
 	if err := c.checkProgram(files); err != nil {
 		return nil, err
 	}
+	runComptimePass(c, files)
 	return &Result{
-		ExprTypes: c.exprTypes,
-		FnSigs:    c.fnSigs,
-		Structs:   c.structs,
-		Enums:     c.enums,
-		FnEffects: c.fnEffects,
+		ExprTypes:      c.exprTypes,
+		FnSigs:         c.fnSigs,
+		Structs:        c.structs,
+		Enums:          c.enums,
+		FnEffects:      c.fnEffects,
+		ComptimeValues: c.comptimeVals,
 	}, nil
 }
 
@@ -131,6 +143,7 @@ func (c *checker) checkProgram(files []*parser.File) error {
 				}
 				c.fnSigs[decl.Name.Lexeme] = sig
 				c.symModule[decl.Name.Lexeme] = mod
+				c.fnDecls[decl.Name.Lexeme] = decl
 				if decl.Effects != nil {
 					c.fnEffects[decl.Name.Lexeme] = decl.Effects
 				}
@@ -232,13 +245,15 @@ func (c *checker) checkModuleAccess(name string, tok lexer.Token) error {
 // ── Internal checker state ────────────────────────────────────────────────────
 
 type checker struct {
-	exprTypes  map[parser.Expr]Type
-	fnSigs     map[string]*FnType
-	structs    map[string]*StructType
-	enums      map[string]*EnumType
-	fnEffects  map[string]*parser.EffectsAnnotation // collected effects annotations
-	curEffects *parser.EffectsAnnotation             // effects of fn currently being checked
-	errs       []error                               // collected statement-level errors
+	exprTypes    map[parser.Expr]Type
+	fnSigs       map[string]*FnType
+	structs      map[string]*StructType
+	enums        map[string]*EnumType
+	fnEffects    map[string]*parser.EffectsAnnotation // collected effects annotations
+	fnDecls      map[string]*parser.FnDecl             // function bodies for comptime eval
+	comptimeVals map[parser.Expr]interface{}           // comptime-evaluated call results
+	curEffects   *parser.EffectsAnnotation             // effects of fn currently being checked
+	errs         []error                               // collected statement-level errors
 
 	// Module enforcement — nil in single-file (Check) mode, populated by CheckProgram.
 	symModule     map[string]string // top-level name → declaring module ("" = root/no module)
@@ -367,6 +382,7 @@ func (c *checker) checkFile(file *parser.File) error {
 				return err
 			}
 			c.fnSigs[d.Name.Lexeme] = sig
+			c.fnDecls[d.Name.Lexeme] = d
 			if d.Effects != nil {
 				c.fnEffects[d.Name.Lexeme] = d.Effects
 			}

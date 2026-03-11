@@ -1329,6 +1329,84 @@ fn main() -> unit {
 	}
 }
 
+// ── Comptime integration tests ────────────────────────────────────────────────
+
+func TestComptimeSquare(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn square(x: i64) -> i64 effects [] { return x * x }
+fn main() -> unit {
+    print_int(square(7))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "comptime_sq", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "49\n" {
+		t.Fatalf("got %q, want %q", got, "49\n")
+	}
+	// Verify the C source contains the constant 49 and main() does not call square().
+	cSrc, _ := os.ReadFile(filepath.Join(dir, "comptime_sq.c"))
+	if !strings.Contains(string(cSrc), "49") {
+		t.Fatalf("expected constant 49 in emitted C, got:\n%s", cSrc)
+	}
+	// main() body should not contain a call to square — just the literal.
+	if strings.Contains(string(cSrc), "square(49)") || strings.Contains(string(cSrc), "square(7)") {
+		t.Fatalf("expected no square() call in main body (should be constant), got:\n%s", cSrc)
+	}
+}
+
+func TestComptimeChainedIntegration(t *testing.T) {
+	skipIfNoCC(t)
+	src := `
+fn twice(x: i64) -> i64 effects [] { return x * 2 }
+fn quad(x: i64) -> i64 effects [] { return twice(twice(x)) }
+fn main() -> unit {
+    print_int(quad(3))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "comptime_chain", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "12\n" {
+		t.Fatalf("got %q, want %q", got, "12\n")
+	}
+}
+
+func TestComptimeFallbackToRuntime(t *testing.T) {
+	skipIfNoCC(t)
+	// When the argument is not a literal, the call must produce the correct
+	// result via normal runtime execution.
+	src := `
+fn square(x: i64) -> i64 effects [] { return x * x }
+fn main() -> unit {
+    let n: i64 = 9
+    print_int(square(n))
+    return unit
+}
+`
+	dir := t.TempDir()
+	bin := compile(t, dir, "comptime_fallback", src)
+	out, err := exec.Command(bin).Output()
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "81\n" {
+		t.Fatalf("got %q, want %q", got, "81\n")
+	}
+}
+
 func TestMoveIntegration(t *testing.T) {
 	skipIfNoCC(t)
 	src := `

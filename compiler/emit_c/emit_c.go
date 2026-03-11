@@ -934,6 +934,11 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 		sb.WriteString("break")
 
 	case *parser.CallExpr:
+		// Comptime-evaluated pure function call — emit constant directly.
+		if v, ok := e.res.ComptimeValues[ex]; ok {
+			emitComptimeConst(v, sb)
+			return nil
+		}
 		// Enum variant constructor: Shape::Circle(2.0) → Shape_Circle(_0)
 		if path, ok := ex.Fn.(*parser.PathExpr); ok {
 			fmt.Fprintf(sb, "%s_%s(", path.Head.Lexeme, path.Tail.Lexeme)
@@ -1261,6 +1266,42 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 }
 
 // ── runtime helpers ───────────────────────────────────────────────────────────
+
+// emitComptimeConst emits a C literal for a comptime-evaluated value.
+func emitComptimeConst(v interface{}, sb *strings.Builder) {
+	switch val := v.(type) {
+	case int64:
+		fmt.Fprintf(sb, "%d", val)
+	case float64:
+		fmt.Fprintf(sb, "%g", val)
+	case bool:
+		if val {
+			sb.WriteString("1")
+		} else {
+			sb.WriteString("0")
+		}
+	case string:
+		sb.WriteByte('"')
+		for _, ch := range val {
+			switch ch {
+			case '"':
+				sb.WriteString(`\"`)
+			case '\\':
+				sb.WriteString(`\\`)
+			case '\n':
+				sb.WriteString(`\n`)
+			case '\t':
+				sb.WriteString(`\t`)
+			default:
+				sb.WriteRune(ch)
+			}
+		}
+		sb.WriteByte('"')
+	default:
+		// unit / nil — should not appear in expression position
+		sb.WriteString("/* unit */")
+	}
+}
 
 // emitRuntimeHelpers emits small C helper functions that back Candor builtins.
 // They are emitted once at the top of the translation unit.

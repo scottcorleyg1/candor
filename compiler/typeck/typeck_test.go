@@ -1199,3 +1199,80 @@ fn main() -> unit {
     return unit
 }`, "ref<T>")
 }
+
+// ── Comptime evaluation ───────────────────────────────────────────────────────
+
+func TestComptimeSimple(t *testing.T) {
+	src := `
+fn square(x: i64) -> i64 effects [] { return x * x }
+fn main() -> unit {
+    let _s = square(7)
+    return unit
+}`
+	res := mustCompile(t, src)
+	// Find the CallExpr for square(7) and check it was evaluated.
+	found := false
+	for _, v := range res.ComptimeValues {
+		if i, ok := v.(int64); ok && i == 49 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected comptime value 49, got %v", res.ComptimeValues)
+	}
+}
+
+func TestComptimeBool(t *testing.T) {
+	src := `
+fn is_positive(x: i64) -> bool effects [] { return x > 0 }
+fn main() -> unit {
+    let _b = is_positive(5)
+    return unit
+}`
+	res := mustCompile(t, src)
+	found := false
+	for _, v := range res.ComptimeValues {
+		if b, ok := v.(bool); ok && b {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected comptime value true")
+	}
+}
+
+func TestComptimeNotEvaluatedWithRuntimeArg(t *testing.T) {
+	// When an argument is not a literal, the call must NOT be evaluated.
+	src := `
+fn square(x: i64) -> i64 effects [] { return x * x }
+fn main() -> unit {
+    let n: i64 = 5
+    let _s = square(n)
+    return unit
+}`
+	res := mustCompile(t, src)
+	if len(res.ComptimeValues) != 0 {
+		t.Fatalf("expected no comptime values for runtime arg, got %v", res.ComptimeValues)
+	}
+}
+
+func TestComptimeChained(t *testing.T) {
+	// Pure calls with pure-call results as args should chain.
+	src := `
+fn double(x: i64) -> i64 effects [] { return x * 2 }
+fn quad(x: i64) -> i64 effects [] { return double(double(x)) }
+fn main() -> unit {
+    let _q = quad(3)
+    return unit
+}`
+	res := mustCompile(t, src)
+	found := false
+	for _, v := range res.ComptimeValues {
+		if i, ok := v.(int64); ok && i == 12 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected comptime value 12, got %v", res.ComptimeValues)
+	}
+}

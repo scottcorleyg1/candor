@@ -45,7 +45,10 @@
       "Bash(go test ./tests/... -run \"TestAppendFileRoundTrip\" -v)",
       "Bash(go test ./typeck/... -run \"TestRef|TestRefmut|TestMove|TestDeref\" -v)",
       "Bash(go test ./tests/... -run \"TestRef|TestRefmut|TestDeref|TestMove\" -v)",
-      "Bash(go test ./tests/... -run \"TestMoveIntegration\" -v)"
+      "Bash(go test ./tests/... -run \"TestMoveIntegration\" -v)",
+      "Bash(go test ./typeck/... -run \"TestComptime\" -v)",
+      "Bash(go test ./tests/... -run \"TestComptime\" -v)",
+      "Bash(go test ./tests/... -run \"TestComptimeSquare\" -v)"
     ]
   }
 }

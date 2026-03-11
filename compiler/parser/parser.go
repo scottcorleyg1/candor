@@ -238,6 +238,14 @@ func (p *parser) parseEffects() (*EffectsAnnotation, error) {
 
 	case lexer.TokEffects:
 		tok := p.advance()
+		// effects [] means pure (no effects) — syntactic sugar for `pure`
+		if p.check(lexer.TokLBracket) {
+			p.advance()
+			if _, err := p.expect(lexer.TokRBracket); err != nil {
+				return nil, err
+			}
+			return &EffectsAnnotation{Kind: EffectsPure}, nil
+		}
 		if _, err := p.expect(lexer.TokLParen); err != nil {
 			return nil, err
 		}
@@ -261,7 +269,7 @@ func (p *parser) parseEffects() (*EffectsAnnotation, error) {
 			return nil, err
 		}
 		if len(names) == 0 {
-			return nil, p.errorf(tok, "effects() requires at least one effect name")
+			return nil, p.errorf(tok, "effects() requires at least one effect name; use effects [] for pure")
 		}
 		return &EffectsAnnotation{Kind: EffectsDecl, Names: names}, nil
 
