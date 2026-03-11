@@ -6,7 +6,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Status: Pre-Alpha](https://img.shields.io/badge/Status-Pre--Alpha-orange.svg)]()
-[![Compiler: v0.0.1](https://img.shields.io/badge/Compiler-v0.0.1-green.svg)]()
+[![Compiler: v0.1.0](https://img.shields.io/badge/Compiler-v0.1.0-green.svg)]()
 
 ---
 
@@ -264,7 +264,7 @@ candorc main.cnd math.cnd
 
 ## Status
 
-Candor `v0.0.1` is a working compiler. The pipeline `.cnd` source → lex → parse → typecheck → emit C → binary is complete. Real programs compile and run.
+Candor `v0.1.0` is a working compiler. The pipeline `.cnd` source → lex → parse → typecheck → emit C → binary is complete. Real programs compile and run.
 
 | Component | Status |
 |---|---|
@@ -278,12 +278,17 @@ Candor `v0.0.1` is a working compiler. The pipeline `.cnd` source → lex → pa
 | First-class functions | Complete |
 | Literal pattern matching | Complete |
 | vec\<T\> (push, len, index, for) | Complete |
+| map\<K,V\> (insert, get, remove, len, contains) | Complete |
 | stdin I/O (read_*, try_read_*) | Complete |
-| i128 / u128 | Not yet |
+| File I/O (read_file, write_file, append_file) | Complete |
+| String operations (concat, len, eq, to_int) | Complete |
+| User-defined enums (sum types with data) | Complete |
+| Ownership annotations (ref, refmut, move, deref) | Complete |
+| Comptime evaluation (pure / effects \[\]) | Complete |
+| secret\<T\> information-flow enforcement | Complete |
+| i128 / u128 | Complete |
 | Lambdas / closures | Not yet |
-| User-defined enums | Not yet |
-| String operations (concat, len) | Not yet |
-| map\<K,V\> / set\<T\> | Not yet |
+| set\<T\> | Not yet |
 | Allocator layer | Future |
 | LLVM backend | Future |
 
