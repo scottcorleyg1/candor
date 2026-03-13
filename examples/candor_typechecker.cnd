@@ -1,0 +1,537 @@
+## ── candor_typechecker.cnd ───────────────────────────────────────────────────
+## Native typechecker for Candor bootstrapping.
+## This module performs type inference and checking on the AST.
+
+## ── Type Definitions ──────────────────────────────────────────────────────────
+
+enum Type {
+    Prim(PrimType),
+    Gen(GenType),
+    Fn(FnTypeT),
+    Struct(StructTypeT),
+    Enum(EnumTypeT),
+    Error(ErrorType)
+}
+
+struct PrimType { name: str }
+struct GenType { con: str, params: vec<Type> }
+struct FnTypeT { params: vec<Type>, ret: vec<Type> }
+struct StructTypeT { name: str, fields: map<str, vec<Type>> }
+struct EnumVariantDef { name: str, fields: vec<Type>, tag: i64 }
+struct EnumTypeT { name: str, variants: vec<EnumVariantDef> }
+struct ErrorType { msg: str }
+
+## ── Canonical Types ──────────────────────────────────────────────────────────
+
+fn type_unit() -> Type { return Type::Prim(PrimType{ name: "unit" }) }
+fn type_bool() -> Type { return Type::Prim(PrimType{ name: "bool" }) }
+fn type_i64()  -> Type { return Type::Prim(PrimType{ name: "i64" }) }
+fn type_f64()  -> Type { return Type::Prim(PrimType{ name: "f64" }) }
+fn type_str()  -> Type { return Type::Prim(PrimType{ name: "str" }) }
+
+fn type_eq(a: Type, b: Type) -> bool {
+    match a {
+        Type::Prim(pa) =>
+            match b {
+                Type::Prim(pb) => return str_eq(pa.name, pb.name)
+                _ => return false
+            }
+        Type::Gen(ga) =>
+            match b {
+                Type::Gen(gb) =>
+                    ## Actually ga.params and gb.params check requires a loop.
+                    ## If Candor doesn't support blocks in match arms, I must use a helper function.
+                    return type_eq_gen(ga, gb)
+                _ => return false
+            }
+        Type::Struct(sa) =>
+            match b {
+                Type::Struct(sb) => return str_eq(sa.name, sb.name)
+                _ => return false
+            }
+        Type::Enum(ea) =>
+            match b {
+                Type::Enum(eb) => return str_eq(ea.name, eb.name)
+                _ => return false
+            }
+        _ => return false
+    }
+}
+
+fn type_eq_gen(ga: GenType, gb: GenType) -> bool {
+    if not str_eq(ga.con, gb.con) { return false }
+    if vec_len(ga.params) != vec_len(gb.params) { return false }
+    let mut i: i64 = 0
+    loop {
+        if i >= vec_len(ga.params) { break }
+        if not type_eq(ga.params[i], gb.params[i]) { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn type_coerce(src: Type, dst: Type) -> bool {
+    if type_eq(src, dst) { return true }
+    ## TODO: refmut<T> can coerce to ref<T>
+    return false
+}
+
+## ── Environment / Symbol Table ───────────────────────────────────────────────
+
+struct VarInfo {
+    typ: vec<Type>,
+    is_mut: bool
+}
+
+struct EnvScope {
+    vars: map<str, VarInfo>
+}
+
+struct Env {
+    scopes: vec<EnvScope>,
+    global_fns: map<str, vec<Type>>,
+    global_structs: map<str, vec<Type>>,
+    global_enums: map<str, vec<Type>>
+}
+
+fn env_register_builtins(env: refmut<Env>) -> unit {
+    let mut print_params : vec<Type> = vec_new()
+    let mut print_ret : vec<Type> = vec_new()
+    let mut print_type_vec : vec<Type> = vec_new()
+    vec_push(print_type_vec, Type::Fn(FnTypeT{ params: print_params, ret: print_ret }))
+    map_insert(env.global_fns, "print", print_type_vec)
+    return unit
+}
+
+fn env_new() -> Env {
+    let mut scopes : vec<EnvScope> = vec_new()
+    let mut vars : map<str, VarInfo> = map_new()
+    vec_push(scopes, EnvScope{ vars: vars })
+    let mut g_fns : map<str, vec<Type>> = map_new()
+    let mut g_structs : map<str, vec<Type>> = map_new()
+    let mut g_enums : map<str, vec<Type>> = map_new()
+    let mut env = Env{
+        scopes: scopes,
+        global_fns: g_fns,
+        global_structs: g_structs,
+        global_enums: g_enums,
+    }
+    env_register_builtins(refmut(env))
+    return env
+}
+
+fn env_enter(env: refmut<Env>) -> unit {
+    vec_push(env.scopes, EnvScope{ vars: map_new() })
+    return unit
+}
+
+fn env_exit(env: refmut<Env>) -> unit {
+    vec_pop(env.scopes)
+    return unit
+}
+
+fn env_define(env: refmut<Env>, name: str, t: Type, is_mut: bool) -> unit {
+    let scope = env.scopes[vec_len(env.scopes) - 1]
+    let mut t_vec : vec<Type> = vec_new()
+    vec_push(t_vec, t)
+    map_insert(scope.vars, name, VarInfo{ typ: t_vec, is_mut: is_mut })
+    return unit
+}
+
+fn env_lookup(env: refmut<Env>, name: str) -> option<VarInfo> {
+    let mut i = vec_len(env.scopes)
+    loop {
+        if i == 0 { break }
+        i = i - 1
+        let scope = env.scopes[i]
+        let info_opt = map_get(scope.vars, name)
+        match info_opt {
+            some(info) => return some(info)
+            none => unit
+        }
+    }
+    return none()
+}
+
+## ── Multi-pass Typechecker ───────────────────────────────────────────────────
+
+struct TCState {
+    env: Env,
+    expr_types: vec<Type>,
+    has_err: bool,
+    errmsg: str
+}
+
+fn tc_new(n_exprs: i64) -> TCState {
+    let mut et: vec<Type> = vec_new()
+    let mut i: i64 = 0
+    loop {
+        if i >= n_exprs { break }
+        vec_push(et, Type::Error(ErrorType{ msg: "unresolved" }))
+        i = i + 1
+    }
+    return TCState{
+        env: env_new(),
+        expr_types: et,
+        has_err: false,
+        errmsg: ""
+    }
+}
+
+fn resolve_type_expr(st: refmut<TCState>, te: TypeExpr) -> Type {
+    match te {
+        TypeExpr::Named(nt) => return resolve_named_type(st, nt)
+        TypeExpr::GenT(gt)  => return resolve_gen_type(st, gt)
+        TypeExpr::FnT(ft)   => return resolve_fn_type(st, ft)
+    }
+}
+
+fn tc_error(st: refmut<TCState>, msg: str) -> Type {
+    st.has_err = true
+    st.errmsg = msg
+    return Type::Error(ErrorType{ msg: msg })
+}
+
+fn resolve_named_type(st: refmut<TCState>, nt: NamedType) -> Type {
+    let name = nt.name.lexeme
+    if str_eq(name, "unit") { return type_unit() }
+    if str_eq(name, "bool") { return type_bool() }
+    if str_eq(name, "i64")  { return type_i64() }
+    if str_eq(name, "f64")  { return type_f64() }
+    if str_eq(name, "str")  { return type_str() }
+
+    let s_opt = map_get(st.env.global_structs, name)
+    match s_opt {
+        some(t_vec) => return t_vec[0]
+        none => unit
+    }
+    let e_opt = map_get(st.env.global_enums, name)
+    match e_opt {
+        some(t_vec) => return t_vec[0]
+        none => unit
+    }
+
+    return tc_error(st, str_concat("unknown type: ", name))
+}
+
+fn resolve_gen_type(st: refmut<TCState>, gt: GenericType) -> Type {
+    let mut params : vec<Type> = vec_new()
+    let mut i: i64 = 0
+    loop {
+        if i >= vec_len(gt.params) { break }
+        vec_push(params, resolve_type_expr(st, gt.params[i]))
+        i = i + 1
+    }
+    return Type::Gen(GenType{ con: gt.name.lexeme, params: params })
+}
+
+fn resolve_fn_type(st: refmut<TCState>, ft: FnType) -> Type {
+    let mut params: vec<Type> = vec_new()
+    let mut i: i64 = 0
+    loop {
+        if i >= vec_len(ft.params) { break }
+        vec_push(params, resolve_type_expr(st, ft.params[i]))
+        i = i + 1
+    }
+    let mut ret: vec<Type> = vec_new()
+    if vec_len(ft.ret_type) > 0 {
+        vec_push(ret, resolve_type_expr(st, ft.ret_type[0]))
+    } else {
+        vec_push(ret, type_unit())
+    }
+    return Type::Fn(FnTypeT{ params: params, ret: ret })
+}
+
+fn get_expr_id(e: Expr) -> i64 {
+    match e {
+        Expr::IntLit(x)    => x.id
+        Expr::FloatLit(x)  => x.id
+        Expr::StringLit(x) => x.id
+        Expr::BoolLit(x)   => x.id
+        Expr::Ident(x)     => x.id
+        Expr::Binary(x)    => x.id
+        Expr::Unary(x)     => x.id
+        Expr::Call(x)      => x.id
+        Expr::Field(x)     => x.id
+        Expr::Index(x)     => x.id
+        Expr::Must(x)      => x.id
+        Expr::Match(x)     => x.id
+        Expr::Ret(x)       => x.id
+        Expr::Brk(x)       => x.id
+        Expr::Path(x)      => x.id
+        Expr::StructLit(x) => x.id
+    }
+}
+
+fn check_expr(st: refmut<TCState>, e: Expr) -> Type {
+    let t = dispatch_check_expr(st, e)
+    let id: i64 = get_expr_id(e)
+    st.expr_types[id] = t
+    return t
+}
+
+fn dispatch_check_expr(st: refmut<TCState>, e: Expr) -> Type {
+    match e {
+        Expr::IntLit(_)    => type_i64()
+        Expr::FloatLit(_)  => type_f64()
+        Expr::StringLit(_) => type_str()
+        Expr::BoolLit(_)   => type_bool()
+        Expr::Ident(x)     => check_ident(st, x)
+        Expr::Unary(x)     => check_unary(st, x)
+        Expr::Call(x)      => check_call(st, x)
+        Expr::Field(x)     => check_field(st, x)
+        Expr::Path(x)      => check_path(st, x)
+        Expr::StructLit(x) => check_struct_lit(st, x)
+        Expr::Binary(x)    => check_binary(st, x)
+        _                  => Type::Error(ErrorType{ msg: "unsupported expr" })
+    }
+}
+
+fn check_ident(st: refmut<TCState>, x: IdentExpr) -> Type {
+    match env_lookup(refmut(st.env), x.tok.lexeme) {
+        some(info) => return info.typ[0]
+        none => return tc_error(st, str_concat("undefined variable: ", x.tok.lexeme))
+    }
+}
+
+fn check_unary(st: refmut<TCState>, x: UnaryExpr) -> Type {
+    let ot = check_expr(st, x.operand[0])
+    ## TODO: check op validity
+    return ot
+}
+
+fn check_call(st: refmut<TCState>, x: CallExpr) -> Type {
+    let ft = check_expr(st, x.fn_expr[0])
+    match ft {
+        Type::Fn(sig) => sig.ret[0]
+        _             => tc_error(st, "call receiver is not a function")
+    }
+}
+
+fn check_field(st: refmut<TCState>, x: FieldExpr) -> Type {
+    let rt = check_expr(st, x.receiver[0])
+    match rt {
+        Type::Struct(s) => match_field(st, s, x.field.lexeme)
+        _               => tc_error(st, "field access on non-struct")
+    }
+}
+
+fn match_field(st: refmut<TCState>, s: StructTypeT, name: str) -> Type {
+    match map_get(s.fields, name) {
+        some(ft_vec) => return ft_vec[0]
+        none => return tc_error(st, str_concat("unknown field: ", name))
+    }
+}
+
+fn check_path(st: refmut<TCState>, x: PathExpr) -> Type {
+    let head = x.head.lexeme
+    match map_get(st.env.global_enums, head) {
+        some(et_vec) => return match_enum_path(st, et_vec[0], x.tail.lexeme)
+        none => return tc_error(st, str_concat("unknown enum: ", head))
+    }
+}
+
+fn match_enum_path(st: refmut<TCState>, et: Type, tail: str) -> Type {
+    match et {
+        Type::Enum(e) => et
+        _             => tc_error(st, "path head is not an enum")
+    }
+}
+
+fn check_struct_lit(st: refmut<TCState>, x: StructLitExpr) -> Type {
+    let name = x.type_name.lexeme
+    match map_get(st.env.global_structs, name) {
+        some(st_vec) => return st_vec[0]
+        none => return tc_error(st, str_concat("unknown struct: ", name))
+    }
+}
+
+fn check_binary(st: refmut<TCState>, x: BinaryExpr) -> Type {
+    let lt = check_expr(st, x.left[0])
+    let rt = check_expr(st, x.right[0])
+    if not type_eq(lt, rt) {
+        st.has_err = true
+        st.errmsg = "type mismatch in binary op"
+        return Type::Error(ErrorType{ msg: st.errmsg })
+    }
+    return lt
+}
+
+fn check_block(st: refmut<TCState>, block: BlockStmt) -> unit {
+    env_enter(refmut(st.env))
+    let mut i: i64 = 0
+    loop {
+        if i >= vec_len(block.stmts) { break }
+        check_stmt(st, block.stmts[i])
+        i = i + 1
+    }
+    env_exit(refmut(st.env))
+    return unit
+}
+
+fn check_stmt(st: refmut<TCState>, s: Stmt) -> unit {
+    match s {
+        Stmt::Block(x)  => check_block(st, x)
+        Stmt::Let(x)    => check_let(st, x)
+        Stmt::Ret(x)    => check_ret(st, x)
+        Stmt::Expr(x)   => check_expr_stmt(st, x)
+        Stmt::If(x)     => check_if(st, x)
+        Stmt::Loop(x)   => check_block(st, x.body[0])
+        Stmt::Assign(x) => check_assign(st, x)
+        _               => unit
+    }
+    return unit
+}
+
+fn check_let(st: refmut<TCState>, x: LetStmt) -> unit {
+    let vt = check_expr(st, x.value[0])
+    let mut expected: Type = vt
+    if vec_len(x.type_ann) > 0 {
+        expected = resolve_type_expr(st, x.type_ann[0])
+        if not type_coerce(vt, expected) {
+            st.has_err = true
+            st.errmsg = "type mismatch in let binding"
+            unit
+        } else { unit }
+    }
+    env_define(refmut(st.env), x.name.lexeme, expected, x.mut_flag)
+    return unit
+}
+
+fn check_ret(st: refmut<TCState>, x: ReturnStmt) -> unit {
+    if vec_len(x.value) > 0 {
+        check_expr(st, x.value[0])
+    }
+    return unit
+}
+
+fn check_expr_stmt(st: refmut<TCState>, x: ExprStmt) -> unit {
+    check_expr(st, x.x[0])
+    return unit
+}
+
+fn check_if(st: refmut<TCState>, x: IfStmt) -> unit {
+    check_expr(st, x.cond[0])
+    check_block(st, x.then_block[0])
+    if vec_len(x.else_stmt) > 0 {
+        check_stmt(st, x.else_stmt[0])
+    }
+    return unit
+}
+
+fn match_assign(st: refmut<TCState>, info: VarInfo, vt: Type, name: str) -> unit {
+    if not info.is_mut {
+        tc_error(st, str_concat("cannot assign to immutable variable: ", name))
+        return unit
+    }
+    if not type_coerce(vt, info.typ[0]) {
+        tc_error(st, "type mismatch in assignment")
+        return unit
+    }
+    return unit
+}
+
+fn check_assign(st: refmut<TCState>, x: AssignStmt) -> unit {
+    let vt = check_expr(st, x.value[0])
+    match env_lookup(refmut(st.env), x.name.lexeme) {
+        some(info) => return match_assign(st, info, vt, x.name.lexeme)
+        none       => return tc_assign_error(st, x.name.lexeme)
+    }
+}
+
+fn tc_assign_error(st: refmut<TCState>, name: str) -> unit {
+    tc_error(st, str_concat("undefined variable: ", name))
+    return unit
+}
+
+fn tc_collect_decls(st: refmut<TCState>, file: FileNode) -> unit {
+    let mut i: i64 = 0
+    loop {
+        if i >= vec_len(file.decls) { break }
+        collect_one_decl(st, file.decls[i])
+        i = i + 1
+    }
+    return unit
+}
+
+fn collect_one_decl(st: refmut<TCState>, d: Decl) -> unit {
+    match d {
+        Decl::Struct(x) => collect_struct(st, x)
+        Decl::Fn(x)     => collect_fn(st, x)
+        _               => unit
+    }
+    return unit
+}
+
+fn collect_struct(st: refmut<TCState>, x: StructDecl) -> unit {
+    let mut fields : map<str, vec<Type>> = map_new()
+    let mut j: i64 = 0
+    loop {
+        if j >= vec_len(x.fields) { break }
+        let field: Field = x.fields[j]
+        let mut f_vec : vec<Type> = vec_new()
+        vec_push(f_vec, resolve_type_expr(st, field.type_expr[0]))
+        map_insert(fields, field.name.lexeme, f_vec)
+        j = j + 1
+    }
+    let mut t_vec : vec<Type> = vec_new()
+    vec_push(t_vec, Type::Struct(StructTypeT{ name: x.name.lexeme, fields: fields }))
+    map_insert(st.env.global_structs, x.name.lexeme, t_vec)
+    return unit
+}
+
+fn collect_fn(st: refmut<TCState>, x: FnDecl) -> unit {
+    let mut params: vec<Type> = vec_new()
+    let mut j: i64 = 0
+    loop {
+        if j >= vec_len(x.params) { break }
+        vec_push(params, resolve_type_expr(st, x.params[j].type_expr[0]))
+        j = j + 1
+    }
+    let mut ret: vec<Type> = vec_new()
+    if vec_len(x.ret_type) > 0 {
+        vec_push(ret, resolve_type_expr(st, x.ret_type[0]))
+    } else {
+        vec_push(ret, type_unit())
+    }
+    let t = Type::Fn(FnTypeT{ params: params, ret: ret })
+    let mut t_vec : vec<Type> = vec_new()
+    vec_push(t_vec, t)
+    map_insert(st.env.global_fns, x.name.lexeme, t_vec)
+    return unit
+}
+
+fn check_file(st: refmut<TCState>, file: FileNode) -> unit {
+    tc_collect_decls(st, file)
+    if st.has_err { return unit }
+    
+    let mut i: i64 = 0
+    loop {
+        if i >= vec_len(file.decls) { break }
+        check_one_decl(st, file.decls[i])
+        i = i + 1
+    }
+    return unit
+}
+
+fn check_one_decl(st: refmut<TCState>, d: Decl) -> unit {
+    match d {
+        Decl::Fn(x) => check_fn_body(st, x)
+        _           => unit
+    }
+    return unit
+}
+
+fn check_fn_body(st: refmut<TCState>, x: FnDecl) -> unit {
+    env_enter(refmut(st.env))
+    let mut j: i64 = 0
+    loop {
+        if j >= vec_len(x.params) { break }
+        let p = x.params[j]
+        env_define(refmut(st.env), p.name.lexeme, resolve_type_expr(st, p.type_expr[0]), false)
+        j = j + 1
+    }
+    check_block(st, x.body[0])
+    env_exit(refmut(st.env))
+    return unit
+}

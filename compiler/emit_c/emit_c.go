@@ -82,20 +82,18 @@ func (e *emitter) emitFile(file *parser.File) error {
 		}
 	}
 
-	// Emit result<T,E> struct typedefs used in this file.
-	if err := e.emitResultStructTypedefs(); err != nil {
-		return err
-	}
 
 	// Emit vec<T> struct typedefs after user structs are forward declared.
 	if err := e.emitVecStructTypedefs(); err != nil {
 		return err
 	}
-
-	// Emit map<K,V> struct typedefs after user structs are forward declared.
 	if err := e.emitMapStructTypedefs(); err != nil {
 		return err
 	}
+	if err := e.emitResultStructTypedefs(); err != nil {
+		return err
+	}
+
 
 	// Emit enum definitions (tagged unions) and struct definitions.
 	// Since structs can contain structs (and result/map entries) by value,
@@ -170,58 +168,85 @@ func (e *emitter) emitFile(file *parser.File) error {
 	return nil
 }
 
-func (e *emitter) vecElemMangle(inner string) string {
-	r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_")
-	return r.Replace(inner)
-}
-
-func (e *emitter) vecTypeName(elemC string) string {
-	return "_CndVec_" + e.vecElemMangle(elemC)
-}
-
-func (e *emitter) vecPushName(elemC string) string {
-	return "_cnd_vec_push_" + e.vecElemMangle(elemC)
-}
-
-func (e *emitter) mapMangle(s string) string {
-	r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_")
+func (e *emitter) mangle(s string) string {
+	r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_", "(", "_", ")", "_", "-", "_")
 	return r.Replace(s)
 }
 
+func (e *emitter) vecTypeName(elemC string) string {
+	return "_CndVec_" + e.mangle(elemC)
+}
+
+func (e *emitter) vecPushName(elemC string) string {
+	return "_cnd_vec_push_" + e.mangle(elemC)
+}
+
 func (e *emitter) mapTypeName(kC, vC string) string {
-	return "_CndMap_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_CndMap_" + e.mangle(kC) + "_" + e.mangle(vC)
 }
 
 func (e *emitter) mapEntryName(kC, vC string) string {
-	return "_CndMapEntry_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_CndMapEntry_" + e.mangle(kC) + "_" + e.mangle(vC)
 }
 
 func (e *emitter) mapHashFnName(kC string) string {
-	return "_cnd_map_hash_" + e.mapMangle(kC)
+	return "_cnd_map_hash_" + e.mangle(kC)
 }
 
 func (e *emitter) mapEqFnName(kC string) string {
-	return "_cnd_map_eq_" + e.mapMangle(kC)
+	return "_cnd_map_eq_" + e.mangle(kC)
 }
 
 func (e *emitter) mapNewFnName(kC, vC string) string {
-	return "_cnd_map_new_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_cnd_map_new_" + e.mangle(kC) + "_" + e.mangle(vC)
 }
 
 func (e *emitter) mapInsertFnName(kC, vC string) string {
-	return "_cnd_map_insert_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_cnd_map_insert_" + e.mangle(kC) + "_" + e.mangle(vC)
 }
 
 func (e *emitter) mapGetFnName(kC, vC string) string {
-	return "_cnd_map_get_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_cnd_map_get_" + e.mangle(kC) + "_" + e.mangle(vC)
 }
 
 func (e *emitter) mapRemoveFnName(kC, vC string) string {
-	return "_cnd_map_remove_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_cnd_map_remove_" + e.mangle(kC) + "_" + e.mangle(vC)
 }
 
 func (e *emitter) mapContainsFnName(kC, vC string) string {
-	return "_cnd_map_contains_" + e.mapMangle(kC) + "_" + e.mapMangle(vC)
+	return "_cnd_map_contains_" + e.mangle(kC) + "_" + e.mangle(vC)
+}
+
+func (e *emitter) resultTypeName(gen *typeck.GenType) (string, error) {
+	if len(gen.Params) != 2 {
+		return "", fmt.Errorf("result needs 2 params")
+	}
+	ok, err := e.cType(gen.Params[0])
+	if err != nil {
+		return "", err
+	}
+	er, err := e.cType(gen.Params[1])
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("_cnd_result_%s_%s", e.mangle(ok), e.mangle(er)), nil
+}
+
+func (e *emitter) fnTypeName(ft *typeck.FnType) (string, error) {
+	ret, err := e.cType(ft.Ret)
+	if err != nil {
+		return "", err
+	}
+	params := make([]string, len(ft.Params))
+	for i, p := range ft.Params {
+		ct, err := e.cType(p)
+		if err != nil {
+			return "", err
+		}
+		params[i] = ct
+	}
+	name := fmt.Sprintf("_cnd_fn_%s_%s", ret, strings.Join(params, "_"))
+	return e.mangle(name), nil
 }
 
 // ── type collection ───────────────────────────────────────────────────────────
@@ -246,6 +271,16 @@ func (e *emitter) allUsedTypes() []typeck.Type {
 				add(p)
 			}
 			add(pt.Ret)
+		case *typeck.StructType:
+			for _, ft := range pt.Fields {
+				add(ft)
+			}
+		case *typeck.EnumType:
+			for _, v := range pt.Variants {
+				for _, ft := range v.Fields {
+					add(ft)
+				}
+			}
 		}
 	}
 	for _, t := range e.res.ExprTypes {
@@ -274,31 +309,6 @@ func (e *emitter) allUsedTypes() []typeck.Type {
 
 // ── fn(...)->... typedef helpers ──────────────────────────────────────────────
 
-func (e *emitter) fnTypeMangle(s string) string {
-	r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_")
-	return r.Replace(s)
-}
-
-// fnTypeName returns the typedef name for a function pointer type.
-// e.g. fn(i64, bool)->u32 → _cnd_fn_int64_t_int_ret_uint32_t
-func (e *emitter) fnTypeName(ft *typeck.FnType) (string, error) {
-	ret, err := e.cType(ft.Ret)
-	if err != nil {
-		return "", err
-	}
-	if len(ft.Params) == 0 {
-		return "_cnd_fn__ret_" + e.fnTypeMangle(ret), nil
-	}
-	parts := make([]string, len(ft.Params))
-	for i, p := range ft.Params {
-		ct, err := e.cType(p)
-		if err != nil {
-			return "", err
-		}
-		parts[i] = e.fnTypeMangle(ct)
-	}
-	return "_cnd_fn_" + strings.Join(parts, "_") + "_ret_" + e.fnTypeMangle(ret), nil
-}
 
 // emitFnTypeTypedefs emits C typedef for every fn(...)->... type used in
 // the program. Dependencies (nested fn types) are emitted before dependents.
@@ -401,7 +411,7 @@ func (e *emitter) emitVecStructTypedefs() error {
 			continue
 		}
 		seen[name] = true
-		e.writef("typedef struct { %s* _data; uint64_t _len; uint64_t _cap; } %s;\n", elemC, name)
+		e.writef("typedef struct %s %s;\n", name, name)
 	}
 	if len(seen) > 0 {
 		e.writeln("")
@@ -434,6 +444,11 @@ func (e *emitter) emitVecStructHelpers() error {
 		e.writef("    }\n")
 		e.writef("    v->_data[v->_len++] = val;\n")
 		e.writef("}\n")
+		popFn := "_cnd_vec_pop_" + e.mangle(elemC)
+		e.writef("static inline %s %s(%s* v) {\n", elemC, popFn, name)
+		e.writef("    assert(v->_len > 0);\n")
+		e.writef("    return v->_data[--v->_len];\n")
+		e.writef("}\n")
 	}
 	if len(seen) > 0 {
 		e.writeln("")
@@ -442,7 +457,7 @@ func (e *emitter) emitVecStructHelpers() error {
 }
 
 func (e *emitter) emitMapStructTypedefs() error {
-	seenMaps := map[string]bool{}
+	seen := map[string]bool{}
 	for _, t := range e.allUsedTypes() {
 		gen, ok := t.(*typeck.GenType)
 		if !ok || gen.Con != "map" || len(gen.Params) != 2 {
@@ -456,23 +471,16 @@ func (e *emitter) emitMapStructTypedefs() error {
 		if err != nil {
 			continue
 		}
-		mapName := e.mapTypeName(kC, vC)
-		if seenMaps[mapName] {
+		name := e.mapTypeName(kC, vC)
+		if seen[name] {
 			continue
 		}
-		seenMaps[mapName] = true
-
+		seen[name] = true
 		entryName := e.mapEntryName(kC, vC)
-
-		// Entry struct (forward declare first so struct pointer works)
 		e.writef("typedef struct %s %s;\n", entryName, entryName)
-		e.writef("struct %s { %s _key; %s _val; struct %s* _next; };\n",
-			entryName, kC, vC, entryName)
-		// Map struct
-		e.writef("typedef struct { %s** _buckets; uint64_t _len; uint64_t _cap; } %s;\n",
-			entryName, mapName)
+		e.writef("typedef struct %s %s;\n", name, name)
 	}
-	if len(seenMaps) > 0 {
+	if len(seen) > 0 {
 		e.writeln("")
 	}
 	return nil
@@ -613,24 +621,6 @@ func (e *emitter) emitResultStructTypedefs() error {
 	return nil
 }
 
-func (e *emitter) resultTypeName(gen *typeck.GenType) (string, error) {
-	if len(gen.Params) != 2 {
-		return "", fmt.Errorf("result needs 2 params")
-	}
-	ok, err := e.cType(gen.Params[0])
-	if err != nil {
-		return "", err
-	}
-	er, err := e.cType(gen.Params[1])
-	if err != nil {
-		return "", err
-	}
-	mangle := func(s string) string {
-		r := strings.NewReplacer(" ", "_", "*", "ptr", "<", "_", ">", "_", ",", "_")
-		return r.Replace(s)
-	}
-	return fmt.Sprintf("_cnd_result_%s_%s", mangle(ok), mangle(er)), nil
-}
 
 func bodyEndsWithReturn(block *parser.BlockStmt) bool {
 	if len(block.Stmts) == 0 {
@@ -660,11 +650,63 @@ func (e *emitter) ensureTypeDependenciesEmitted(t typeck.Type) error {
 	case *typeck.EnumType:
 		return e.ensureEnumEmitted(t)
 	case *typeck.GenType:
+		if t.Con == "vec" && len(t.Params) == 1 {
+			// vec<T> only needs T to be forward-declared because it stores T*.
+			// Forward declarations are already emitted at the top of the file.
+			elemC, err := e.cType(t.Params[0])
+			if err != nil {
+				return err
+			}
+			name := e.vecTypeName(elemC)
+			if e.emittedTypes[name] || e.emittingTypes[name] {
+				return nil
+			}
+			e.emittingTypes[name] = true
+			e.writef("struct %s { %s* _data; uint64_t _len; uint64_t _cap; };\n", name, elemC)
+			e.emittedTypes[name] = true
+			e.emittingTypes[name] = false
+			return nil
+		}
+
+		// For other generic types (map, result), we need params to be fully defined.
 		for _, p := range t.Params {
 			if err := e.ensureTypeDependenciesEmitted(p); err != nil {
 				return err
 			}
 		}
+
+		if t.Con == "map" && len(t.Params) == 2 {
+			kC, err := e.cType(t.Params[0])
+			if err != nil {
+				return err
+			}
+			vC, err := e.cType(t.Params[1])
+			if err != nil {
+				return err
+			}
+			mapName := e.mapTypeName(kC, vC)
+			if e.emittedTypes[mapName] || e.emittingTypes[mapName] {
+				return nil
+			}
+			e.emittingTypes[mapName] = true
+
+			entryName := e.mapEntryName(kC, vC)
+			e.writef("struct %s {\n", entryName)
+			e.writef("    %s _key;\n", kC)
+			e.writef("    %s _val;\n", vC)
+			e.writef("    struct %s* _next;\n", entryName)
+			e.writef("};\n")
+
+			e.writef("struct %s {\n", mapName)
+			e.writef("    struct %s** _buckets;\n", entryName)
+			e.writef("    uint64_t _cap;\n")
+			e.writef("    uint64_t _len;\n")
+			e.writef("};\n")
+
+			e.emittedTypes[mapName] = true
+			e.emittingTypes[mapName] = false
+		}
+
 		if t.Con == "result" && len(t.Params) == 2 {
 			name, err := e.resultTypeName(t)
 			if err != nil {
@@ -721,7 +763,7 @@ func (e *emitter) ensureStructEmitted(st *typeck.StructType) error {
 		// Pointers (ref<T>, vec<T>, map<K,V>, option<T>) don't require the inner type
 		// to be fully defined for the struct body. Only inline types do.
 		if gen, ok := fType.(*typeck.GenType); ok {
-			if gen.Con == "ref" || gen.Con == "refmut" || gen.Con == "vec" || gen.Con == "map" || gen.Con == "option" {
+			if gen.Con == "ref" || gen.Con == "refmut" || gen.Con == "option" {
 				// We don't strictly need it defined here, but we still ensure it.
 			} else if err := e.ensureTypeDependenciesEmitted(gen); err != nil {
 				return err
@@ -1594,11 +1636,33 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 		if len(args) != 1 {
 			return false, nil
 		}
-		sb.WriteByte('(')
+		sb.WriteString("(")
 		if err := e.emitExpr(args[0], sb); err != nil {
 			return true, err
 		}
 		sb.WriteString(")._len")
+		return true, nil
+
+	case "vec_pop":
+		// vec_pop(v) → _cnd_vec_pop_T(&(v))
+		if len(args) != 1 {
+			return false, nil
+		}
+		vecType, ok := e.res.ExprTypes[args[0]].(*typeck.GenType)
+		if !ok || vecType.Con != "vec" || len(vecType.Params) == 0 {
+			return false, nil
+		}
+		elemC, err := e.cType(vecType.Params[0])
+		if err != nil {
+			return true, err
+		}
+		popFn := "_cnd_vec_pop_" + e.mangle(elemC)
+		sb.WriteString(popFn)
+		sb.WriteString("(&(")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteString("))")
 		return true, nil
 
 	case "map_insert":
@@ -2099,14 +2163,17 @@ func (e *emitter) emitConstructorCall(ex *parser.CallExpr, fn *parser.IdentExpr,
 		if err != nil {
 			return true, err
 		}
-		sb.WriteString("&(")
+		sb.WriteString("(__extension__ ({ ")
 		sb.WriteString(ct)
-		sb.WriteByte('{')
+		sb.WriteString("* _p = (")
+		sb.WriteString(ct)
+		sb.WriteString("*)malloc(sizeof(")
+		sb.WriteString(ct)
+		sb.WriteString(")); *_p = ")
 		if err := e.emitExpr(ex.Args[0], sb); err != nil {
 			return true, err
 		}
-		sb.WriteByte('}')
-		sb.WriteByte(')')
+		sb.WriteString("; _p; }))")
 		return true, nil
 
 	case lexer.TokNone:

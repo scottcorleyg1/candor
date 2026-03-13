@@ -892,6 +892,8 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 				return c.inferVecPush(e, ident, sc)
 			case "vec_len":
 				return c.inferVecLen(e, ident, sc)
+			case "vec_pop":
+				return c.inferVecPop(e, ident, sc)
 			case "map_new":
 				return c.inferMapNew(e, ident, sc, hint)
 			case "map_insert":
@@ -1473,13 +1475,29 @@ func (c *checker) inferVecLen(e *parser.CallExpr, fn *parser.IdentExpr, sc *scop
 	if !ok || (gen.Con != "vec" && gen.Con != "ring") {
 		return nil, c.errorf(e.Args[0].Pos(), "vec_len() requires vec<T> or ring<T>, got %s", vecType)
 	}
-	c.record(fn, TU64)
-	return TU64, nil
+	c.record(fn, TI64)
+	return TI64, nil
 }
 
 // ── map built-in functions ────────────────────────────────────────────────────
 
-func (c *checker) inferMapNew(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
+func (c *checker) inferVecPop(e *parser.CallExpr, ident *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(ident.Tok, "vec_pop() expects 1 argument, got %d", len(e.Args))
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := argType.(*GenType)
+	if !ok || gen.Con != "vec" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "vec_pop() expects vec<T>, got %s", argType)
+	}
+	// No hint pinning needed for pop, but we return the element type.
+	return gen.Params[0], nil
+}
+
+func (c *checker) inferMapNew(e *parser.CallExpr, ident *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
 	if len(e.Args) != 0 {
 		return nil, c.errorf(e.LParen, "map_new() takes no arguments")
 	}
@@ -1489,10 +1507,10 @@ func (c *checker) inferMapNew(e *parser.CallExpr, fn *parser.IdentExpr, sc *scop
 		valType = gen.Params[1]
 	}
 	if keyType == nil || valType == nil {
-		return nil, c.errorf(fn.Tok, "map_new() requires a type annotation to infer key/value types")
+		return nil, c.errorf(ident.Tok, "map_new() requires a type annotation to infer key/value types")
 	}
 	t := &GenType{Con: "map", Params: []Type{keyType, valType}}
-	c.record(fn, t)
+	c.record(ident, t)
 	return t, nil
 }
 
@@ -1590,8 +1608,8 @@ func (c *checker) inferMapLen(e *parser.CallExpr, fn *parser.IdentExpr, sc *scop
 	if !ok || gen.Con != "map" || len(gen.Params) != 2 {
 		return nil, c.errorf(e.Args[0].Pos(), "map_len() requires map<K,V>, got %s", mapType)
 	}
-	c.record(fn, TU64)
-	return TU64, nil
+	c.record(fn, TI64)
+	return TI64, nil
 }
 
 func (c *checker) inferMapContains(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {

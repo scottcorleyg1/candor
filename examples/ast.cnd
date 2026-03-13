@@ -33,36 +33,41 @@ enum Expr {
     StructLit(StructLitExpr)
 }
 
-struct IntLitExpr { tok: Token }
-struct FloatLitExpr { tok: Token }
-struct StringLitExpr { tok: Token }
-struct BoolLitExpr { tok: Token }
-struct IdentExpr { tok: Token }
+struct IntLitExpr { id: i64, tok: Token }
+struct FloatLitExpr { id: i64, tok: Token }
+struct StringLitExpr { id: i64, tok: Token }
+struct BoolLitExpr { id: i64, tok: Token }
+struct IdentExpr { id: i64, tok: Token }
 
 struct BinaryExpr {
+    id: i64,
     left: vec<Expr>,
     op: Token,
     right: vec<Expr>
 }
 
 struct UnaryExpr {
+    id: i64,
     op: Token,
     operand: vec<Expr>
 }
 
 struct CallExpr {
+    id: i64,
     fn_expr: vec<Expr>,
     lparen: Token,
     args: vec<Expr>
 }
 
 struct FieldExpr {
+    id: i64,
     receiver: vec<Expr>,
     dot: Token,
     field: Token
 }
 
 struct IndexExpr {
+    id: i64,
     collection: vec<Expr>,
     lbracket: Token,
     index: vec<Expr>
@@ -75,27 +80,32 @@ struct MustArm {
 }
 
 struct MustExpr {
+    id: i64,
     x: vec<Expr>,
     must_tok: Token,
     arms: vec<MustArm>
 }
 
 struct MatchExpr {
+    id: i64,
     match_tok: Token,
     x: vec<Expr>,
     arms: vec<MustArm>
 }
 
 struct ReturnExpr {
+    id: i64,
     return_tok: Token,
     value: vec<Expr>  ## length 0 or 1
 }
 
 struct BreakExpr {
+    id: i64,
     break_tok: Token
 }
 
 struct PathExpr {
+    id: i64,
     head: Token,
     sep: Token,
     tail: Token
@@ -108,6 +118,7 @@ struct FieldInit {
 }
 
 struct StructLitExpr {
+    id: i64,
     type_name: Token,
     fields: vec<FieldInit>
 }

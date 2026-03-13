@@ -2,6 +2,17 @@
 
 > *Code should mean exactly what it says, and say everything it means.*
 
+<!-- USER PERSONAL NOTE START -->
+> [!NOTE]
+> **A Note from the Author**: This is my first foray into actually making a public repo and my experience with git repositories has generally been from the perspective of a user, not a maintainer or a developer. So please go easy on me as I learn and grow. I, like a lot of people have been doing a lot with AI agents and I have been trying to think of areas where I can contribute to the open source community in a way that might improve the efficiency of AI agents in programming. In a personal research project (aka rabbit hole of what if's) I started thinking about human language vs AI vs programming language and the differences between them. Project Candor has emerged from the idea of wanting to limit the ambiguity of programming languages to make them more amenable to AI agents. I am not a language designer by trade, but I have been programming for a long time and I have a lot of ideas about what I would like to see in a programming language. I am open to feedback and suggestions.
+>
+> I may be off track with this project. I hope it inspires other ideas.
+>
+> Let the fun journey begin! (and hopefully not burn anything down in the process.)
+>
+> -Scott W. Corley
+<!-- USER PERSONAL NOTE END -->
+
 **A systems programming language designed for semantic density, unambiguous logic, and agentic AI collaboration.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -59,7 +70,7 @@ Candor is built in composable layers. Core is simple enough for a first day. Eac
 Core          primitives, control flow, result<T,E>, option<T>, structs     [IMPLEMENTED]
   effects       declare what a function can touch                            [IMPLEMENTED]
   contracts     requires / ensures / assert                                  [IMPLEMENTED]
-  collections   vec<T> ring<T> (push, len, index, for)                      [IMPLEMENTED]
+  collections   vec<T> map<K,V> (push, len, insert, get)                    [IMPLEMENTED]
   ...
   tags          @[pure] @[secret] @[retryable] — verified claims            [future]
   natural       intent-first development, verified examples                  [future]
@@ -281,12 +292,12 @@ Candor `v0.1.0` is a working compiler. The pipeline `.cnd` source → lex → pa
 | map\<K,V\> (insert, get, remove, len, contains) | Complete |
 | stdin I/O (read_*, try_read_*) | Complete |
 | File I/O (read_file, write_file, append_file) | Complete |
-| String operations (concat, len, eq, to_int) | Complete |
+| String operations (concat, len, eq, substr) | Complete |
 | User-defined enums (sum types with data) | Complete |
 | Ownership annotations (ref, refmut, move, deref) | Complete |
-| Comptime evaluation (pure / effects \[\]) | Complete |
-| secret\<T\> information-flow enforcement | Complete |
 | i128 / u128 | Complete |
+| Comptime evaluation (pure / effects []) | Complete |
+| secret\<T\> information-flow enforcement | Complete |
 | Lambdas / closures | Not yet |
 | set\<T\> | Not yet |
 | Allocator layer | Future |
@@ -315,6 +326,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
+## Project Structure
+
+```
+candor/
+├── docs/                      <- Documentation and Specifications
+│   ├── specification.md       <- Full Language Specification
+│   ├── language-reference.md  <- Implemented Language Reference
+│   ├── welcome.md             <- Getting Started Guide
+│   ├── roadmap.md             <- Future Plans
+│   ├── mcp-context.md         <- AI/MCP Knowledge Context
+│   └── what_is_in_core.md     <- Core v0.1.0 Feature Overview
+├── compiler/                  <- candorc Source (Go 1.24)
+│   ├── main.go
+│   ├── lexer/
+│   ├── parser/
+│   ├── typeck/
+│   └── emit_c/
+├── tools/                     <- Development and Transformation Tools
+├── examples/                  <- Sample Candor Programs
+├── tests/                     <- Integration Test Suite
+├── LICENSE                    <- Apache 2.0
+├── README.md                  <- This File
+└── .gitignore                 <- Repository Hygiene
+```
+
+---
+
 ## License
 
 Copyright © 2026 Scott W. Corley
@@ -324,4 +362,4 @@ The Candor name, language specification, and compiler source are the property of
 
 ---
 
-*Candor — compiler v0.0.1*
+*Candor — compiler v0.1.0*

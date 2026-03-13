@@ -1,0 +1,17 @@
+fn sum(a: i64, b: i64) -> i64 {
+    let result = a + b
+    return result
+}
+
+struct Point {
+    x: i64,
+    y: i64
+}
+
+fn main() -> unit {
+    let p = Point{ x: 10, y: sum(5, 15) }
+    if p.x > 5 {
+        let mut z = p.x * p.y
+    }
+    return unit
+}

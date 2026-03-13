@@ -29,4 +29,11 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
+
+# Candor specific
+candorc
+**/*.c
+**/*.exe
+*.txt
+/tools/

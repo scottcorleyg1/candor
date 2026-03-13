@@ -1,9 +1,0 @@
-struct TokenList {
-    items: vec<i64>
-}
-
-fn main() -> unit {
-    // try to use the vec<T> field to ensure it really works
-    let mut list = TokenList { items: vec[] }
-    list.items = vec[1, 2, 3]
-}

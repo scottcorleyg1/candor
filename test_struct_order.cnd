@@ -1,3 +1,0 @@
-struct U { v: V }
-struct V { x: i64 }
-fn main() -> unit {}

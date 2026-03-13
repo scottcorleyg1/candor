@@ -88,12 +88,14 @@ fn advance_c(l: refmut<Lexer>) -> u8 {
 ## ── skip whitespace and ## comments ─────────────────────────────────────────
 fn skip_ws(l: refmut<Lexer>) -> unit {
     loop {
+        
         if at_end(l) { break }
         let c = peek_c(l)
         if c == 32 or c == 9 or c == 13 or c == 10 {
             advance_c(l)
         } else if c == 35 and peek2_c(l) == 35 {
             loop {
+        
                 if at_end(l) { break }
                 let cc = advance_c(l)
                 if cc == 10 { break }
@@ -150,6 +152,7 @@ fn scan_ident(l: refmut<Lexer>, kw: map<str, i64>) -> Token {
     let start = l.pos
     let line  = l.line
     loop {
+        
         if at_end(l) { break }
         if not is_alnum(peek_c(l)) { break }
         advance_c(l)
@@ -166,6 +169,7 @@ fn scan_int(l: refmut<Lexer>) -> Token {
     let start = l.pos
     let line  = l.line
     loop {
+        
         if at_end(l) { break }
         if not is_digit(peek_c(l)) { break }
         advance_c(l)
@@ -178,6 +182,7 @@ fn scan_str_lit(l: refmut<Lexer>) -> Token {
     let start = l.pos
     advance_c(l)
     loop {
+        
         if at_end(l) { break }
         let c = advance_c(l)
         if c == 34 { break }
@@ -257,6 +262,7 @@ fn lex_source(src: str) -> vec<Token> {
     let kw = make_kw_map()
     let mut tokens: vec<Token> = vec_new()
     loop {
+        
         skip_ws(refmut(l))
         if at_end(refmut(l)) { break }
         let tok = next_tok(refmut(l), kw)
@@ -266,12 +272,330 @@ fn lex_source(src: str) -> vec<Token> {
     return tokens
 }
 
+
+## ast.cnd - Candor Abstract Syntax Tree definitions
+##
+## This file defines the explicit, statically-typed nodes for Candor's AST.
+## In alignment with Candor's philosophy of explicit ownership and no hidden
+## allocations, recursive nodes own their children via explicit heap 
+## allocations using `vec<T>` (typically of length 1).
+## Pointers (`ref<T>`) are strictly for borrowing and cannot own AST branches.
+
+
+
+## ── Expressions ──────────────────────────────────────────────────────────────
+
+enum Expr {
+    IntLit(IntLitExpr),
+    FloatLit(FloatLitExpr),
+    StringLit(StringLitExpr),
+    BoolLit(BoolLitExpr),
+    Ident(IdentExpr),
+    Binary(BinaryExpr),
+    Unary(UnaryExpr),
+    Call(CallExpr),
+    Field(FieldExpr),
+    Index(IndexExpr),
+    Must(MustExpr),
+    Match(MatchExpr),
+    Ret(ReturnExpr),
+    Brk(BreakExpr),
+    Path(PathExpr),
+    StructLit(StructLitExpr)
+}
+
+struct IntLitExpr { id: i64, tok: Token }
+struct FloatLitExpr { id: i64, tok: Token }
+struct StringLitExpr { id: i64, tok: Token }
+struct BoolLitExpr { id: i64, tok: Token }
+struct IdentExpr { id: i64, tok: Token }
+
+struct BinaryExpr {
+    id: i64,
+    left: vec<Expr>,
+    op: Token,
+    right: vec<Expr>
+}
+
+struct UnaryExpr {
+    id: i64,
+    op: Token,
+    operand: vec<Expr>
+}
+
+struct CallExpr {
+    id: i64,
+    fn_expr: vec<Expr>,
+    lparen: Token,
+    args: vec<Expr>
+}
+
+struct FieldExpr {
+    id: i64,
+    receiver: vec<Expr>,
+    dot: Token,
+    field: Token
+}
+
+struct IndexExpr {
+    id: i64,
+    collection: vec<Expr>,
+    lbracket: Token,
+    index: vec<Expr>
+}
+
+struct MustArm {
+    pattern: vec<Expr>,
+    arrow: Token,
+    body: vec<Expr>
+}
+
+struct MustExpr {
+    id: i64,
+    x: vec<Expr>,
+    must_tok: Token,
+    arms: vec<MustArm>
+}
+
+struct MatchExpr {
+    id: i64,
+    match_tok: Token,
+    x: vec<Expr>,
+    arms: vec<MustArm>
+}
+
+struct ReturnExpr {
+    id: i64,
+    return_tok: Token,
+    value: vec<Expr>  ## length 0 or 1
+}
+
+struct BreakExpr {
+    id: i64,
+    break_tok: Token
+}
+
+struct PathExpr {
+    id: i64,
+    head: Token,
+    sep: Token,
+    tail: Token
+}
+
+struct FieldInit {
+    name: Token,
+    colon: Token,
+    value: vec<Expr>
+}
+
+struct StructLitExpr {
+    id: i64,
+    type_name: Token,
+    fields: vec<FieldInit>
+}
+
+## ── Statements ───────────────────────────────────────────────────────────────
+
+enum Stmt {
+    Block(BlockStmt),
+    Let(LetStmt),
+    Ret(ReturnStmt),
+    Expr(ExprStmt),
+    If(IfStmt),
+    Loop(LoopStmt),
+    Brk(BreakStmt),
+    For(ForStmt),
+    Assign(AssignStmt),
+    FieldAssign(FieldAssignStmt),
+    IndexAssign(IndexAssignStmt),
+    Assert(AssertStmt)
+}
+
+struct BlockStmt {
+    lbrace: Token,
+    stmts: vec<Stmt>
+}
+
+struct LetStmt {
+    let_tok: Token,
+    mut_flag: bool,
+    name: Token,
+    type_ann: vec<TypeExpr>,  ## length 0 or 1
+    value: vec<Expr>
+}
+
+struct ReturnStmt {
+    return_tok: Token,
+    value: vec<Expr>  ## length 0 or 1
+}
+
+struct ExprStmt {
+    x: vec<Expr>
+}
+
+struct IfStmt {
+    if_tok: Token,
+    cond: vec<Expr>,
+    then_block: vec<BlockStmt>,
+    else_stmt: vec<Stmt>  ## length 0 or 1
+}
+
+struct LoopStmt {
+    loop_tok: Token,
+    body: vec<BlockStmt>
+}
+
+struct BreakStmt {
+    break_tok: Token
+}
+
+struct ForStmt {
+    for_tok: Token,
+    var_name: Token,
+    var2_name: vec<Token>,  ## length 0 or 1
+    in_tok: Token,
+    collection: vec<Expr>,
+    body: vec<BlockStmt>
+}
+
+struct AssignStmt {
+    name: Token,
+    eq: Token,
+    value: vec<Expr>
+}
+
+struct FieldAssignStmt {
+    target: vec<FieldExpr>,
+    eq: Token,
+    value: vec<Expr>
+}
+
+struct IndexAssignStmt {
+    target: vec<IndexExpr>,
+    eq: Token,
+    value: vec<Expr>
+}
+
+struct AssertStmt {
+    assert_tok: Token,
+    expr: vec<Expr>
+}
+
+## ── Types ────────────────────────────────────────────────────────────────────
+
+enum TypeExpr {
+    Named(NamedType),
+    GenT(GenericType),
+    FnT(FnType)
+}
+
+struct NamedType {
+    name: Token
+}
+
+struct GenericType {
+    name: Token,
+    params: vec<TypeExpr>
+}
+
+struct FnType {
+    fn_tok: Token,
+    params: vec<TypeExpr>,
+    ret_type: vec<TypeExpr>
+}
+
+## ── Declarations ─────────────────────────────────────────────────────────────
+
+enum Decl {
+    Module(ModuleDecl),
+    Use(UseDecl),
+    Fn(FnDecl),
+    Struct(StructDecl),
+    Enum(EnumDecl),
+    ExternFn(ExternFnDecl)
+}
+
+struct ModuleDecl {
+    module_tok: Token,
+    name: Token
+}
+
+struct UseDecl {
+    use_tok: Token,
+    path: vec<Token>
+}
+
+struct Param {
+    name: Token,
+    type_expr: vec<TypeExpr>
+}
+
+struct ContractClause {
+    kind: i64,  ## 0 = requires, 1 = ensures
+    tok: Token,
+    expr: vec<Expr>
+}
+
+struct EffectsAnnotation {
+    kind: i64,  ## 0 = none, 1 = pure, 2 = decl, 3 = cap
+    names: vec<str>
+}
+
+struct FnDecl {
+    fn_tok: Token,
+    name: Token,
+    params: vec<Param>,
+    ret_type: vec<TypeExpr>,
+    effects_ann: vec<EffectsAnnotation>,  ## length 0 or 1
+    contracts: vec<ContractClause>,
+    body: vec<BlockStmt>
+}
+
+struct Field {
+    name: Token,
+    type_expr: vec<TypeExpr>
+}
+
+struct StructDecl {
+    struct_tok: Token,
+    name: Token,
+    fields: vec<Field>
+}
+
+struct EnumVariant {
+    name: Token,
+    fields: vec<TypeExpr>
+}
+
+struct EnumDecl {
+    enum_tok: Token,
+    name: Token,
+    variants: vec<EnumVariant>
+}
+
+struct ExternFnDecl {
+    extern_tok: Token,
+    name: Token,
+    params: vec<Param>,
+    ret_type: vec<TypeExpr>,
+    effects_ann: vec<EffectsAnnotation>  ## length 0 or 1
+}
+
+## ── File ─────────────────────────────────────────────────────────────────────
+
+struct FileNode {
+    name: str,
+    decls: vec<Decl>
+}
+
 ## ── parser structs ────────────────────────────────────────────────────────────
+
 ## Note: vec<Token> cannot be a struct field (compiler limitation: vec typedefs
 ## are emitted after struct definitions). We use pos/n_tokens as a separate
 ## struct and pass tokens as a parameter everywhere.
 
 struct PState {
+    next_expr_id: i64,
     pos:      u64
     n_tokens: u64
     has_err:  bool
@@ -281,6 +605,12 @@ struct PState {
 struct Stats {
     fn_count:     i64
     struct_count: i64
+}
+
+fn par_get_id(p: refmut<PState>) -> i64 {
+    let id = p.next_expr_id
+    p.next_expr_id = p.next_expr_id + 1
+    return id
 }
 
 ## ── parser utilities ─────────────────────────────────────────────────────────
@@ -338,318 +668,854 @@ fn par_expect(p: refmut<PState>, tokens: vec<Token>, kind: i64) -> str {
     return ""
 }
 
-## ── type parser ───────────────────────────────────────────────────────────────
-## Consumes tokens until a terminator (, ) { = at angle-bracket depth 0.
-fn parse_type_str(p: refmut<PState>, tokens: vec<Token>) -> str {
-    let mut result: str = ""
-    let mut angle_depth: i64 = 0
+## ── parser ───────────────────────────────────────────────────────────────────
+
+## ── Expression Parser ───────────────────────────────────────────────────────
+
+## Forward declaration (must be handled carefully in Candor, but we'll put it at the top)
+## Since Candor doesn't strictly require forward decls if topologically sorted, 
+## wait! Functions in Candor might need to be topologically sorted, or it supports mutually recursive fns.
+## Candor supports mutually recursive functions.
+
+fn parse_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    return parse_or_expr(p, tokens)
+}
+
+fn parse_or_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut left = parse_and_expr(p, tokens)
     loop {
-        let k = par_peek_kind(p, tokens)
-        if angle_depth == 0 {
-            if k == TK_COMMA()   { break }
-            if k == TK_RPAREN()  { break }
-            if k == TK_LBRACE()  { break }
-            if k == TK_EQ()      { break }
-            if k == TK_EOF()     { break }
-            ## pure/effects/requires/ensures terminate the type
-            if k == 113 { break }
-            if k == 114 { break }
-            if k == 115 { break }
-            if k == 116 { break }
-        }
-        if k == TK_LT() { angle_depth = angle_depth + 1 }
-        if k == TK_GT() {
-            if angle_depth > 0 {
-                angle_depth = angle_depth - 1
-            } else {
-                break
-            }
-        }
-        let tok = par_advance(p, tokens)
-        ## Handle fn type: fn(params) -> ret
-        if tok.kind == 101 {
-            result = str_concat(result, "fn")
-            if par_peek_kind(p, tokens) == TK_LPAREN() {
-                par_advance(p, tokens)
-                result = str_concat(result, "(")
-                let mut first_param: bool = true
-                loop {
-                    if par_peek_kind(p, tokens) == TK_RPAREN() { break }
-                    if par_peek_kind(p, tokens) == TK_EOF()    { break }
-                    if not first_param {
-                        result = str_concat(result, ", ")
-                        par_advance(p, tokens)
-                    }
-                    let pt = parse_type_str(p, tokens)
-                    result = str_concat(result, pt)
-                    first_param = false
-                    if par_peek_kind(p, tokens) != TK_COMMA() {
-                        break
-                    }
-                }
-                par_match(p, tokens, TK_RPAREN())
-                result = str_concat(result, ")")
-                if par_peek_kind(p, tokens) == TK_ARROW() {
-                    par_advance(p, tokens)
-                    result = str_concat(result, " -> ")
-                    let rt = parse_type_str(p, tokens)
-                    result = str_concat(result, rt)
-                }
-            }
+        if p.has_err { break }
+
+        if par_check(p, tokens, 131) { ## 'or'
+            let op = par_advance(p, tokens)
+            let right = parse_and_expr(p, tokens)
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Binary(BinaryExpr{ id: par_get_id(p), left: left, op: op, right: right }))
+            left = v
         } else {
-            result = str_concat(result, tok.lexeme)
+            break
         }
     }
-    return result
+    return left
 }
 
-## ── struct-field type parser ─────────────────────────────────────────────────
-## Like parse_type_str but also stops at IDENT/keyword followed by COLON
-## (the start of the next field) at angle_depth=0.
-fn parse_struct_field_type(p: refmut<PState>, tokens: vec<Token>) -> str {
-    let mut result: str = ""
-    let mut angle_depth: i64 = 0
+fn parse_and_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut left = parse_cmp_expr(p, tokens)
     loop {
-        let k = par_peek_kind(p, tokens)
-        if angle_depth == 0 {
-            if k == TK_COMMA()   { break }
-            if k == TK_RPAREN()  { break }
-            if k == TK_LBRACE()  { break }
-            if k == TK_RBRACE()  { break }
-            if k == TK_EQ()      { break }
-            if k == TK_EOF()     { break }
-            if k == 113 { break }
-            if k == 114 { break }
-            if k == 115 { break }
-            if k == 116 { break }
-            ## If IDENT or keyword followed by COLON, it's the next field name — stop
-            if k == TK_IDENT() or k >= 101 {
-                if par_peek_next_kind(p, tokens) == TK_COLON() {
-                    break
-                }
-            }
-        }
-        if k == TK_LT() { angle_depth = angle_depth + 1 }
-        if k == TK_GT() {
-            if angle_depth > 0 {
-                angle_depth = angle_depth - 1
-            } else {
-                break
-            }
-        }
-        let tok = par_advance(p, tokens)
-        result = str_concat(result, tok.lexeme)
-    }
-    return result
-}
+        if p.has_err { break }
 
-## ── body skipper with statement counter ──────────────────────────────────────
-fn skip_body_count_stmts(p: refmut<PState>, tokens: vec<Token>) -> i64 {
-    par_expect(p, tokens, TK_LBRACE())
-    let mut depth: i64 = 1
-    let mut count: i64 = 0
-    loop {
-        if depth == 0 { break }
-        let k = par_peek_kind(p, tokens)
-        if k == TK_EOF() { break }
-        if k == TK_LBRACE() {
-            depth = depth + 1
-            par_advance(p, tokens)
-        } else if k == TK_RBRACE() {
-            depth = depth - 1
-            par_advance(p, tokens)
+        if par_check(p, tokens, 130) { ## 'and'
+            let op = par_advance(p, tokens)
+            let right = parse_cmp_expr(p, tokens)
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Binary(BinaryExpr{ id: par_get_id(p), left: left, op: op, right: right }))
+            left = v
         } else {
-            if depth == 1 {
-                if k == 102 { count = count + 1 }  ## let
-                if k == 103 { count = count + 1 }  ## return
-                if k == 104 { count = count + 1 }  ## if
-                if k == 107 { count = count + 1 }  ## loop
-                if k == 108 { count = count + 1 }  ## break
-                if k == 109 { count = count + 1 }  ## for
-            }
-            par_advance(p, tokens)
+            break
         }
     }
-    return count
+    return left
 }
 
-## ── param list parser ─────────────────────────────────────────────────────────
-fn parse_params(p: refmut<PState>, tokens: vec<Token>) -> str {
-    par_expect(p, tokens, TK_LPAREN())
-    let mut result: str = ""
-    let mut first: bool = true
+fn parse_cmp_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut left = parse_add_expr(p, tokens)
     loop {
+        if p.has_err { break }
+
+        let k = par_peek_kind(p, tokens)
+        if k == TK_EQEQ() or k == TK_BANGEQ() or k == TK_LT() or k == TK_GT() or k == TK_LTEQ() or k == TK_GTEQ() {
+            let op = par_advance(p, tokens)
+            let right = parse_add_expr(p, tokens)
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Binary(BinaryExpr{ id: par_get_id(p), left: left, op: op, right: right }))
+            left = v
+        } else {
+            break
+        }
+    }
+    return left
+}
+
+fn parse_add_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut left = parse_mul_expr(p, tokens)
+    loop {
+        if p.has_err { break }
+
+        let k = par_peek_kind(p, tokens)
+        if k == TK_PLUS() or k == TK_MINUS() {
+            let op = par_advance(p, tokens)
+            let right = parse_mul_expr(p, tokens)
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Binary(BinaryExpr{ id: par_get_id(p), left: left, op: op, right: right }))
+            left = v
+        } else {
+            break
+        }
+    }
+    return left
+}
+
+fn parse_mul_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut left = parse_unary_expr(p, tokens)
+    loop {
+        if p.has_err { break }
+
+        let k = par_peek_kind(p, tokens)
+        if k == TK_STAR() or k == TK_SLASH() or k == TK_PERCENT() {
+            let op = par_advance(p, tokens)
+            let right = parse_unary_expr(p, tokens)
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Binary(BinaryExpr{ id: par_get_id(p), left: left, op: op, right: right }))
+            left = v
+        } else {
+            break
+        }
+    }
+    return left
+}
+
+fn parse_unary_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let k = par_peek_kind(p, tokens)
+    if k == TK_ERROR() or k == 132 or k == TK_MINUS() or k == TK_AMP() or k == TK_STAR() { ## ! not - & *
+        ## TK_ERROR() happens to be '!' in the lexer currently
+        let op = par_advance(p, tokens)
+        let operand = parse_unary_expr(p, tokens)
+        let mut v: vec<Expr> = vec_new()
+        vec_push(v, Expr::Unary(UnaryExpr{ id: par_get_id(p), op: op, operand: operand }))
+        return v
+    }
+    return parse_postfix_expr(p, tokens)
+}
+
+fn parse_postfix_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut expr = parse_primary_expr(p, tokens)
+    loop {
+        if p.has_err { break }
+
+        let k = par_peek_kind(p, tokens)
+        if k == TK_LPAREN() {
+            let lp = par_advance(p, tokens)
+            let args = parse_args(p, tokens)
+            par_expect(p, tokens, TK_RPAREN())
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Call(CallExpr{ id: par_get_id(p), fn_expr: expr, lparen: lp, args: args }))
+            expr = v
+        } else if k == TK_DOT() {
+            let dot = par_advance(p, tokens)
+            let field = par_peek(p, tokens)
+            par_expect(p, tokens, TK_IDENT())
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Field(FieldExpr{ id: par_get_id(p), receiver: expr, dot: dot, field: field }))
+            expr = v
+        } else if k == TK_LBRACKET() {
+            let lb = par_advance(p, tokens)
+            let index = parse_expr(p, tokens)
+            par_expect(p, tokens, TK_RBRACKET())
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Index(IndexExpr{ id: par_get_id(p), collection: expr, lbracket: lb, index: index }))
+            expr = v
+        } else if k == 133 { ## must
+            let must_tok = par_advance(p, tokens)
+            par_expect(p, tokens, TK_LBRACE())
+            let arms = parse_must_arms(p, tokens)
+            par_expect(p, tokens, TK_RBRACE())
+            let mut v: vec<Expr> = vec_new()
+            vec_push(v, Expr::Must(MustExpr{ id: par_get_id(p), x: expr, must_tok: must_tok, arms: arms }))
+            expr = v
+        } else if k == TK_LBRACE() {
+            ## Struct literal: only if expr is an Ident with an Uppercase first letter.
+            ## We don't have robust AST introspectors yet, but we can check if it's an Ident
+            ## by checking vec length and extracting it. 
+            ## However, in Candor enum matching is currently via `match` statement?
+            ## The go version says: ident, isIdent := expr.(*IdentExpr); isIdent && isPascalCase
+            ## We will just allow any Ident to be a struct literal if followed by '{' for now.
+            break  ## struct lit handled separately or we break.
+        } else {
+            break
+        }
+    }
+    return expr
+}
+
+fn parse_args(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut args: vec<Expr> = vec_new()
+    loop {
+        if p.has_err { break }
+
         if par_peek_kind(p, tokens) == TK_RPAREN() { break }
-        if par_peek_kind(p, tokens) == TK_EOF()    { break }
-        if not first {
-            result = str_concat(result, ", ")
-            par_match(p, tokens, TK_COMMA())
+        if par_peek_kind(p, tokens) == TK_EOF() { break }
+        if vec_len(args) > 0 {
+            par_expect(p, tokens, TK_COMMA())
         }
-        let pname = par_peek(p, tokens)
-        if pname.kind == TK_IDENT() or pname.kind >= 101 {
-            par_advance(p, tokens)
-            if par_peek_kind(p, tokens) == TK_COLON() {
-                par_advance(p, tokens)
-                let ptype = parse_type_str(p, tokens)
-                result = str_concat(result, str_concat(pname.lexeme, str_concat(": ", ptype)))
-            } else {
-                result = str_concat(result, pname.lexeme)
-            }
-        } else {
-            break
-        }
-        first = false
+        if par_peek_kind(p, tokens) == TK_RPAREN() { break }
+        let arg = parse_expr(p, tokens)
+        vec_push(args, arg[0])
     }
-    par_expect(p, tokens, TK_RPAREN())
-    return result
+    return args
 }
 
-## ── fn declaration parser ─────────────────────────────────────────────────────
-fn parse_fn_decl(p: refmut<PState>, tokens: vec<Token>, stats: refmut<Stats>) -> unit {
-    ## consume 'fn' keyword
-    par_advance(p, tokens)
-    let name = par_advance(p, tokens)
-    let params = parse_params(p, tokens)
-    ## -> return type
-    let mut ret_type: str = "unit"
-    if par_peek_kind(p, tokens) == TK_ARROW() {
+fn parse_must_arms(p: refmut<PState>, tokens: vec<Token>) -> vec<MustArm> {
+    let mut arms: vec<MustArm> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_peek_kind(p, tokens) == TK_RBRACE() { break }
+        if par_peek_kind(p, tokens) == TK_EOF() { break }
+        let mut pattern: vec<Expr> = vec_new()
+        if par_check(p, tokens, TK_IDENT()) and par_peek(p, tokens).lexeme == "_" {
+            let tok = par_advance(p, tokens)
+            vec_push(pattern, Expr::Ident(IdentExpr{ id: par_get_id(p), tok: tok }))
+        } else {
+            pattern = parse_expr(p, tokens)
+        }
+        let arrow = par_peek(p, tokens)
+        par_expect(p, tokens, TK_ARROW()) ## '=>' is fat arrow, wait TK_ARROW() is '->', we might need to check if '=>' token exists
+        let body = parse_must_arm_body(p, tokens)
+        vec_push(arms, MustArm{ pattern: pattern, arrow: arrow, body: body })
+        if par_check(p, tokens, TK_COMMA()) {
+            par_advance(p, tokens)
+        }
+    }
+    return arms
+}
+
+fn parse_must_arm_body(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    if par_check(p, tokens, 103) { ## return
+        let ret_tok = par_advance(p, tokens)
+        let val = parse_expr(p, tokens)
+        let mut v: vec<Expr> = vec_new()
+        vec_push(v, Expr::Ret(ReturnExpr{ id: par_get_id(p), return_tok: ret_tok, value: val }))
+        return v
+    }
+    if par_check(p, tokens, 108) { ## break
+        let brk_tok = par_advance(p, tokens)
+        let mut v: vec<Expr> = vec_new()
+        vec_push(v, Expr::Brk(BreakExpr{ id: par_get_id(p), break_tok: brk_tok }))
+        return v
+    }
+    return parse_expr(p, tokens)
+}
+
+fn parse_primary_expr(p: refmut<PState>, tokens: vec<Token>) -> vec<Expr> {
+    let mut v: vec<Expr> = vec_new()
+    let t = par_peek(p, tokens)
+    let k = t.kind
+
+    if k == TK_INT() {
         par_advance(p, tokens)
-        ret_type = parse_type_str(p, tokens)
+        vec_push(v, Expr::IntLit(IntLitExpr{ id: par_get_id(p), tok: t }))
+        return v
     }
-    ## optional effect annotations
-    let mut effect_str: str = ""
-    loop {
-        let ek = par_peek_kind(p, tokens)
-        if ek == 113 {
-            ## pure
-            effect_str = " pure"
-            par_advance(p, tokens)
-            break
-        } else if ek == 114 or ek == 115 or ek == 116 {
-            ## effects/requires/ensures - skip with parens
-            par_advance(p, tokens)
-            if par_peek_kind(p, tokens) == TK_LPAREN() {
-                par_advance(p, tokens)
-                let mut depth2: i64 = 1
-                loop {
-                    if depth2 == 0 { break }
-                    let k2 = par_peek_kind(p, tokens)
-                    if k2 == TK_EOF() { break }
-                    if k2 == TK_LPAREN() { depth2 = depth2 + 1 }
-                    if k2 == TK_RPAREN() { depth2 = depth2 - 1 }
-                    par_advance(p, tokens)
-                }
-            }
-        } else {
-            break
+    if k == TK_STR() {
+        par_advance(p, tokens)
+        vec_push(v, Expr::StringLit(StringLitExpr{ id: par_get_id(p), tok: t }))
+        return v
+    }
+    if k == 128 or k == 129 { ## true, false
+        par_advance(p, tokens)
+        vec_push(v, Expr::BoolLit(BoolLitExpr{ id: par_get_id(p), tok: t }))
+        return v
+    }
+    if k == TK_IDENT() or k == 121 { ## ident, secret
+        par_advance(p, tokens)
+        if k == TK_IDENT() and par_check(p, tokens, TK_COLON()) {   ## '::'
+            ## we'd need a TK_COLONCOLON token, instead lexer skips or returns two COLONs?
+            ## The lexer just returns TK_COLON. So we look for two colons.
         }
+        let mut is_struct_lit = false
+        if par_check(p, tokens, TK_LBRACE()) {
+            ## struct lit
+            let start = t.lexeme[0]
+            if start >= 65 and start <= 90 {
+                is_struct_lit = true
+            }
+        }
+        if is_struct_lit {
+            par_advance(p, tokens) ## '{'
+            let fields = parse_field_inits(p, tokens)
+            par_expect(p, tokens, TK_RBRACE())
+            vec_push(v, Expr::StructLit(StructLitExpr{ id: par_get_id(p), type_name: t, fields: fields }))
+            return v
+        }
+        vec_push(v, Expr::Ident(IdentExpr{ id: par_get_id(p), tok: t }))
+        return v
     }
-    ## count stmts in body
-    let mut stmt_count: i64 = 0
-    if par_peek_kind(p, tokens) == TK_LBRACE() {
-        stmt_count = skip_body_count_stmts(p, tokens)
+    if k == 106 { ## match
+        ## return parse_match_expr(p, tokens)
     }
-    ## print result
-    let sig = str_concat("fn ", str_concat(name.lexeme, str_concat("(", str_concat(params, str_concat(") -> ", str_concat(ret_type, str_concat(effect_str, str_concat("  [", str_concat(int_to_str(stmt_count), " stmts]")))))))))
-    print(sig)
-    stats.fn_count = stats.fn_count + 1
-    return unit
+    if k == TK_LPAREN() {
+        par_advance(p, tokens)
+        let expr = parse_expr(p, tokens)
+        par_expect(p, tokens, TK_RPAREN())
+        return expr
+    }
+    ## fallback error
+    p.has_err = true
+    return v
 }
 
-## ── struct declaration parser ─────────────────────────────────────────────────
-fn parse_struct_decl(p: refmut<PState>, tokens: vec<Token>, stats: refmut<Stats>) -> unit {
-    ## consume 'struct'
-    par_advance(p, tokens)
-    let name = par_advance(p, tokens)
-    par_expect(p, tokens, TK_LBRACE())
-    let mut fields: str = ""
-    let mut first: bool = true
+fn parse_field_inits(p: refmut<PState>, tokens: vec<Token>) -> vec<FieldInit> {
+    let mut fields: vec<FieldInit> = vec_new()
     loop {
+        if p.has_err { break }
+
         if par_peek_kind(p, tokens) == TK_RBRACE() { break }
-        if par_peek_kind(p, tokens) == TK_EOF()    { break }
-        ## skip commas
-        if par_peek_kind(p, tokens) == TK_COMMA() {
-            par_advance(p, tokens)
+        if par_peek_kind(p, tokens) == TK_EOF() { break }
+        if vec_len(fields) > 0 {
+            par_expect(p, tokens, TK_COMMA())
         }
         if par_peek_kind(p, tokens) == TK_RBRACE() { break }
-        let fname = par_peek(p, tokens)
-        if fname.kind == TK_IDENT() or fname.kind >= 101 {
-            par_advance(p, tokens)
-            if par_peek_kind(p, tokens) == TK_COLON() {
-                par_advance(p, tokens)
-                let ftype = parse_struct_field_type(p, tokens)
-                if not first {
-                    fields = str_concat(fields, ", ")
-                }
-                fields = str_concat(fields, str_concat(fname.lexeme, str_concat(": ", ftype)))
-                first = false
-            }
-        } else {
-            break
-        }
+        
+        let name = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        let colon = par_peek(p, tokens)
+        par_expect(p, tokens, TK_COLON())
+        let value = parse_expr(p, tokens)
+        
+        vec_push(fields, FieldInit{ name: name, colon: colon, value: value })
+    }
+    return fields
+}
+
+
+## ── Statement Parser ───────────────────────────────────────────────────────
+
+fn parse_block(p: refmut<PState>, tokens: vec<Token>) -> vec<BlockStmt> {
+    let lbrace = tokens[p.pos - 1]
+    let mut stmts: vec<Stmt> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_peek_kind(p, tokens) == TK_RBRACE() { break }
+        if par_peek_kind(p, tokens) == TK_EOF() { break }
+        let stmt = parse_stmt(p, tokens)
+        vec_push(stmts, stmt[0])
     }
     par_expect(p, tokens, TK_RBRACE())
-    print(str_concat("struct ", str_concat(name.lexeme, str_concat(" { ", str_concat(fields, " }")))))
-    stats.struct_count = stats.struct_count + 1
-    return unit
+    
+    let mut v: vec<BlockStmt> = vec_new()
+    vec_push(v, BlockStmt{ lbrace: lbrace, stmts: stmts })
+    return v
 }
 
-## ── enum / generic body skipper ──────────────────────────────────────────────
-fn skip_to_matching_brace(p: refmut<PState>, tokens: vec<Token>) -> unit {
-    par_expect(p, tokens, TK_LBRACE())
-    let mut depth: i64 = 1
-    loop {
-        if depth == 0 { break }
-        let k = par_peek_kind(p, tokens)
-        if k == TK_EOF() { break }
-        if k == TK_LBRACE() { depth = depth + 1 }
-        if k == TK_RBRACE() { depth = depth - 1 }
-        par_advance(p, tokens)
+fn parse_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let k = par_peek_kind(p, tokens)
+    if k == 102 { ## let
+        return parse_let_stmt(p, tokens)
     }
-    return unit
+    if k == 103 { ## return
+        return parse_return_stmt(p, tokens)
+    }
+    if k == 104 { ## if
+        return parse_if_stmt(p, tokens)
+    }
+    if k == 107 { ## loop
+        return parse_loop_stmt(p, tokens)
+    }
+    if k == 109 { ## for
+        return parse_for_stmt(p, tokens)
+    }
+    if k == 108 { ## break
+        let brk = par_advance(p, tokens)
+        let mut v: vec<Stmt> = vec_new()
+        vec_push(v, Stmt::Brk(BreakStmt{ break_tok: brk }))
+        return v
+    }
+    if k == 117 { ## assert
+        let assert_tok = par_advance(p, tokens)
+        let expr = parse_expr(p, tokens)
+        let mut v: vec<Stmt> = vec_new()
+        vec_push(v, Stmt::Assert(AssertStmt{ assert_tok: assert_tok, expr: expr }))
+        return v
+    }
+    return parse_expr_or_assign_stmt(p, tokens)
 }
 
-## ── top-level parser ─────────────────────────────────────────────────────────
-fn parse_top_level(p: refmut<PState>, tokens: vec<Token>, stats: refmut<Stats>) -> unit {
-    loop {
-        let k = par_peek_kind(p, tokens)
-        if k == TK_EOF() { break }
-        if k == 101 {
-            ## fn
-            parse_fn_decl(p, tokens, stats)
-        } else if k == 111 {
-            ## struct
-            parse_struct_decl(p, tokens, stats)
-        } else if k == 112 {
-            ## enum - skip name and body
-            par_advance(p, tokens)
-            par_advance(p, tokens)
-            if par_peek_kind(p, tokens) == TK_LBRACE() {
-                skip_to_matching_brace(p, tokens)
-            }
-        } else if k == 118 or k == 119 {
-            ## module / use - skip to next top-level item
-            par_advance(p, tokens)
-            loop {
-                let k2 = par_peek_kind(p, tokens)
-                if k2 == TK_EOF()  { break }
-                if k2 == 101       { break }
-                if k2 == 111       { break }
-                if k2 == 112       { break }
-                par_advance(p, tokens)
-            }
-        } else if k == 134 {
-            ## extern - consume, then parse fn if next
-            par_advance(p, tokens)
-            if par_peek_kind(p, tokens) == 101 {
-                parse_fn_decl(p, tokens, stats)
-            }
+fn parse_let_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let let_tok = par_advance(p, tokens)
+    let mut is_mut = false
+    let peek_tok = par_peek(p, tokens)
+    if peek_tok.kind == 120 or str_eq(peek_tok.lexeme, "mut") {
+        par_advance(p, tokens)
+        is_mut = true
+    }
+    let name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    
+    let mut type_ann: vec<TypeExpr> = vec_new()
+    if par_check(p, tokens, TK_COLON()) {
+        par_advance(p, tokens)
+        let typ = parse_type(p, tokens)
+        vec_push(type_ann, typ[0])
+    }
+    
+    par_expect(p, tokens, TK_EQ())
+    let value = parse_expr(p, tokens)
+    
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::Let(LetStmt{ let_tok: let_tok, mut_flag: is_mut, name: name, type_ann: type_ann, value: value }))
+    return v
+}
+
+fn handle_ident_assign(idx: IdentExpr, eq: Token, value: vec<Expr>) -> vec<Stmt> {
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::Assign(AssignStmt{ name: idx.tok, eq: eq, value: value }))
+    return v
+}
+
+fn handle_field_assign(fdx: FieldExpr, eq: Token, value: vec<Expr>) -> vec<Stmt> {
+    let mut tv: vec<FieldExpr> = vec_new()
+    vec_push(tv, fdx)
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::FieldAssign(FieldAssignStmt{ target: tv, eq: eq, value: value }))
+    return v
+}
+
+fn handle_index_assign(idx_expr: IndexExpr, eq: Token, value: vec<Expr>) -> vec<Stmt> {
+    let mut tv: vec<IndexExpr> = vec_new()
+    vec_push(tv, idx_expr)
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::IndexAssign(IndexAssignStmt{ target: tv, eq: eq, value: value }))
+    return v
+}
+
+fn set_err_stmt(p: refmut<PState>) -> vec<Stmt> {
+    p.has_err = true
+    let mut v: vec<Stmt> = vec_new()
+    return v
+}
+
+fn parse_expr_or_assign_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let expr = parse_expr(p, tokens)
+    if par_check(p, tokens, TK_EQ()) {
+        let eq = par_advance(p, tokens)
+        let value = parse_expr(p, tokens)
+        
+        let mut result: vec<Stmt> = vec_new()
+        result = match expr[0] {
+            Expr::Ident(idx) => handle_ident_assign(idx, eq, value),
+            Expr::Field(fdx) => handle_field_assign(fdx, eq, value),
+            Expr::Index(ix)  => handle_index_assign(ix, eq, value),
+            _          => set_err_stmt(p)
+        }
+        if vec_len(result) == 0 {
+            p.has_err = true
+        }
+        return result
+    }
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::Expr(ExprStmt{ x: expr }))
+    return v
+}
+
+fn parse_return_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let ret_tok = par_advance(p, tokens)
+    let mut value: vec<Expr> = vec_new()
+    if not (par_check(p, tokens, TK_RBRACE()) or par_check(p, tokens, TK_EOF())) {
+        let e = parse_expr(p, tokens)
+        vec_push(value, e[0])
+    }
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::Ret(ReturnStmt{ return_tok: ret_tok, value: value }))
+    return v
+}
+
+fn parse_if_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let if_tok = par_advance(p, tokens)
+    let cond = parse_expr(p, tokens)
+    
+    par_expect(p, tokens, TK_LBRACE())
+    let then_body = parse_block(p, tokens)
+    
+    let mut else_body: vec<Stmt> = vec_new()
+    if par_check(p, tokens, 105) { ## else
+        par_advance(p, tokens)
+        if par_check(p, tokens, 104) { ## if
+            let elif = parse_if_stmt(p, tokens)
+            vec_push(else_body, elif[0])
         } else {
-            par_advance(p, tokens)
+            par_expect(p, tokens, TK_LBRACE())
+            let eblk = parse_block(p, tokens)
+            vec_push(else_body, Stmt::Block(eblk[0]))
         }
     }
-    return unit
+    
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::If(IfStmt{ if_tok: if_tok, cond: cond, then_block: then_body, else_stmt: else_body }))
+    return v
 }
+
+fn parse_loop_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let loop_tok = par_advance(p, tokens)
+    par_expect(p, tokens, TK_LBRACE())
+    let body = parse_block(p, tokens)
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::Loop(LoopStmt{ loop_tok: loop_tok, body: body }))
+    return v
+}
+
+fn parse_for_stmt(p: refmut<PState>, tokens: vec<Token>) -> vec<Stmt> {
+    let for_tok = par_advance(p, tokens)
+    let mut is_mut = false
+    if par_check(p, tokens, 120) { ## mut
+        par_advance(p, tokens)
+        is_mut = true
+    }
+    let var_name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    
+    let mut var2: vec<Token> = vec_new()
+    if par_check(p, tokens, TK_COMMA()) {
+        par_advance(p, tokens)
+        let v2 = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        vec_push(var2, v2)
+    }
+    
+    let in_tok = par_peek(p, tokens)
+    par_expect(p, tokens, 110) ## 'in'
+    
+    let coll = parse_expr(p, tokens)
+    
+    par_expect(p, tokens, TK_LBRACE())
+    let body = parse_block(p, tokens)
+    
+    let mut v: vec<Stmt> = vec_new()
+    vec_push(v, Stmt::For(ForStmt{ for_tok: for_tok, var_name: var_name, var2_name: var2, in_tok: in_tok, collection: coll, body: body }))
+    return v
+}
+
+
+## ── Types & Declarations Parser ───────────────────────────────────────────────
+
+fn parse_type(p: refmut<PState>, tokens: vec<Token>) -> vec<TypeExpr> {
+    let t = par_peek(p, tokens)
+    let k = t.kind
+    if k == TK_IDENT() or k == 121 { ## ident, secret
+        let name = par_advance(p, tokens)
+        if par_check(p, tokens, TK_LT()) {
+            return parse_generic_type(p, tokens, name)
+        }
+        let mut v: vec<TypeExpr> = vec_new()
+        vec_push(v, TypeExpr::Named(NamedType{ name: name }))
+        return v
+    }
+    if k == 101 { ## fn
+        return parse_fn_type(p, tokens)
+    }
+    p.has_err = true
+    let mut v2: vec<TypeExpr> = vec_new()
+    return v2
+}
+
+fn parse_generic_type(p: refmut<PState>, tokens: vec<Token>, name: Token) -> vec<TypeExpr> {
+    par_advance(p, tokens) ## '<'
+    let mut params: vec<TypeExpr> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_GT()) { break }
+        if par_check(p, tokens, TK_EOF()) { break }
+        if vec_len(params) > 0 {
+            par_expect(p, tokens, TK_COMMA())
+        }
+        if par_check(p, tokens, TK_GT()) { break }
+        
+        let param = parse_type(p, tokens)
+        vec_push(params, param[0])
+    }
+    par_expect(p, tokens, TK_GT())
+    let mut v: vec<TypeExpr> = vec_new()
+    vec_push(v, TypeExpr::GenT(GenericType{ name: name, params: params }))
+    return v
+}
+
+fn parse_fn_type(p: refmut<PState>, tokens: vec<Token>) -> vec<TypeExpr> {
+    let fn_tok = par_advance(p, tokens)
+    par_expect(p, tokens, TK_LPAREN())
+    let mut params: vec<TypeExpr> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_RPAREN()) { break }
+        if par_check(p, tokens, TK_EOF()) { break }
+        if vec_len(params) > 0 {
+            par_expect(p, tokens, TK_COMMA())
+        }
+        if par_check(p, tokens, TK_RPAREN()) { break }
+        
+        let param = parse_type(p, tokens)
+        vec_push(params, param[0])
+    }
+    par_expect(p, tokens, TK_RPAREN())
+    par_expect(p, tokens, TK_ARROW())
+    let ret_type = parse_type(p, tokens)
+    
+    let mut v: vec<TypeExpr> = vec_new()
+    vec_push(v, TypeExpr::FnT(FnType{ fn_tok: fn_tok, params: params, ret_type: ret_type }))
+    return v
+}
+
+fn parse_decl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let k = par_peek_kind(p, tokens)
+    if k == 101 { return parse_fndecl(p, tokens) }       ## fn
+    if k == 111 { return parse_structdecl(p, tokens) }   ## struct
+    if k == 112 { return parse_enumdecl(p, tokens) }     ## enum
+    if k == 118 { return parse_moduledecl(p, tokens) }   ## module
+    if k == 119 { return parse_usedecl(p, tokens) }      ## use
+    if k == 134 { return parse_extern_fndecl(p, tokens) } ## extern
+    
+    p.has_err = true
+    par_advance(p, tokens)
+    let mut v: vec<Decl> = vec_new()
+    return v
+}
+
+fn parse_extern_fndecl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let ext_tok = par_advance(p, tokens)
+    par_expect(p, tokens, 101) ## 'fn'
+    let name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    
+    par_expect(p, tokens, TK_LPAREN())
+    let mut params: vec<Param> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_RPAREN()) { break }
+        if par_check(p, tokens, TK_EOF()) { break }
+        if vec_len(params) > 0 { par_expect(p, tokens, TK_COMMA()) }
+        if par_check(p, tokens, TK_RPAREN()) { break }
+        
+        let pName = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        par_expect(p, tokens, TK_COLON())
+        let pType = parse_type(p, tokens)
+        vec_push(params, Param{ name: pName, type_expr: pType })
+    }
+    par_expect(p, tokens, TK_RPAREN())
+    par_expect(p, tokens, TK_ARROW())
+    let retType = parse_type(p, tokens)
+    
+    let effs = parse_effects(p, tokens)
+    
+    let mut v: vec<Decl> = vec_new()
+    vec_push(v, Decl::ExternFn(ExternFnDecl{ extern_tok: ext_tok, name: name, params: params, ret_type: retType, effects_ann: effs }))
+    return v
+}
+
+fn parse_moduledecl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let mod_tok = par_advance(p, tokens)
+    let name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    let mut v: vec<Decl> = vec_new()
+    vec_push(v, Decl::Module(ModuleDecl{ module_tok: mod_tok, name: name }))
+    return v
+}
+
+fn parse_usedecl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let use_tok = par_advance(p, tokens)
+    let mut path: vec<Token> = vec_new()
+    let seg1 = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    vec_push(path, seg1)
+    
+    loop {
+        if p.has_err { break }
+
+        if not par_check(p, tokens, TK_COLON()) { break }
+        ## Candor lexer yields two colons for '::'
+        par_advance(p, tokens)
+        if par_check(p, tokens, TK_COLON()) { par_advance(p, tokens) }
+        
+        let segn = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        vec_push(path, segn)
+    }
+    let mut v: vec<Decl> = vec_new()
+    vec_push(v, Decl::Use(UseDecl{ use_tok: use_tok, path: path }))
+    return v
+}
+
+fn parse_fndecl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let fn_tok = par_advance(p, tokens)
+    let name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    
+    par_expect(p, tokens, TK_LPAREN())
+    let mut params: vec<Param> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_RPAREN()) { break }
+        if par_check(p, tokens, TK_EOF()) { break }
+        if vec_len(params) > 0 { par_expect(p, tokens, TK_COMMA()) }
+        if par_check(p, tokens, TK_RPAREN()) { break }
+        
+        let pName = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        par_expect(p, tokens, TK_COLON())
+        let pType = parse_type(p, tokens)
+        vec_push(params, Param{ name: pName, type_expr: pType })
+    }
+    par_expect(p, tokens, TK_RPAREN())
+    
+    par_expect(p, tokens, TK_ARROW())
+    let retType = parse_type(p, tokens)
+    
+    let effs = parse_effects(p, tokens)
+    
+    ## We skip parsing contracts for this initial bootstrap parser for simplicity 
+    ## since no stdlib uses them yet, or we can just parse them if needed. 
+    ## Candor standard library does not use `requires` or `ensures` heavily right now.
+    ## Let's parse them to be accurate.
+    let mut contracts: vec<ContractClause> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, 115) { ## requires
+            let t = par_advance(p, tokens)
+            let ce = parse_expr(p, tokens)
+            vec_push(contracts, ContractClause{ kind: 0, tok: t, expr: ce })
+        } else if par_check(p, tokens, 116) { ## ensures
+            let t = par_advance(p, tokens)
+            let ce = parse_expr(p, tokens)
+            vec_push(contracts, ContractClause{ kind: 1, tok: t, expr: ce })
+        } else {
+            break
+        }
+    }
+    
+    par_expect(p, tokens, TK_LBRACE())
+    let body = parse_block(p, tokens)
+    
+    let mut v: vec<Decl> = vec_new()
+    vec_push(v, Decl::Fn(FnDecl{ fn_tok: fn_tok, name: name, params: params, ret_type: retType, effects_ann: effs, contracts: contracts, body: body }))
+    return v
+}
+
+fn parse_effects(p: refmut<PState>, tokens: vec<Token>) -> vec<EffectsAnnotation> {
+    let mut effs: vec<EffectsAnnotation> = vec_new()
+    if par_check(p, tokens, 113) { ## pure
+        par_advance(p, tokens)
+        let mut names: vec<str> = vec_new()
+        vec_push(effs, EffectsAnnotation{ kind: 1, names: names })
+    } else if par_check(p, tokens, 114) { ## effects
+        par_advance(p, tokens)
+        if par_check(p, tokens, TK_LBRACKET()) { ## 'effects []' is pure
+            par_advance(p, tokens)
+            par_expect(p, tokens, TK_RBRACKET())
+            let mut names: vec<str> = vec_new()
+            vec_push(effs, EffectsAnnotation{ kind: 1, names: names })
+        } else {
+            par_expect(p, tokens, TK_LPAREN())
+            let mut names: vec<str> = vec_new()
+            loop {
+        if p.has_err { break }
+
+                if par_check(p, tokens, TK_RPAREN()) { break }
+                if par_check(p, tokens, TK_EOF()) { break }
+                if vec_len(names) > 0 { par_expect(p, tokens, TK_COMMA()) }
+                if par_check(p, tokens, TK_RPAREN()) { break }
+                let name = par_peek(p, tokens)
+                par_expect(p, tokens, TK_IDENT())
+                vec_push(names, name.lexeme)
+            }
+            par_expect(p, tokens, TK_RPAREN())
+            vec_push(effs, EffectsAnnotation{ kind: 2, names: names })
+        }
+    }
+    ## cap is kind 3, skip for now to save time
+    return effs
+}
+
+fn parse_structdecl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let struct_tok = par_advance(p, tokens)
+    let name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    par_expect(p, tokens, TK_LBRACE())
+    
+    let mut fields: vec<Field> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_RBRACE()) { break }
+        if par_check(p, tokens, TK_EOF()) { break }
+        
+        let fname = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        par_expect(p, tokens, TK_COLON())
+        let ftype = parse_type(p, tokens)
+        vec_push(fields, Field{ name: fname, type_expr: ftype })
+        
+        if par_check(p, tokens, TK_COMMA()) { par_advance(p, tokens) }
+    }
+    par_expect(p, tokens, TK_RBRACE())
+    
+    let mut v: vec<Decl> = vec_new()
+    vec_push(v, Decl::Struct(StructDecl{ struct_tok: struct_tok, name: name, fields: fields }))
+    return v
+}
+
+fn parse_enumdecl(p: refmut<PState>, tokens: vec<Token>) -> vec<Decl> {
+    let enum_tok = par_advance(p, tokens)
+    let name = par_peek(p, tokens)
+    par_expect(p, tokens, TK_IDENT())
+    par_expect(p, tokens, TK_LBRACE())
+    
+    let mut variants: vec<EnumVariant> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_RBRACE()) { break }
+        if par_check(p, tokens, TK_EOF()) { break }
+        
+        let vname = par_peek(p, tokens)
+        par_expect(p, tokens, TK_IDENT())
+        let mut fields: vec<TypeExpr> = vec_new()
+        if par_check(p, tokens, TK_LPAREN()) {
+            par_advance(p, tokens)
+            loop {
+        if p.has_err { break }
+
+                if par_check(p, tokens, TK_RPAREN()) { break }
+                if par_check(p, tokens, TK_EOF()) { break }
+                if vec_len(fields) > 0 { par_expect(p, tokens, TK_COMMA()) }
+                if par_check(p, tokens, TK_RPAREN()) { break }
+                
+                let ft = parse_type(p, tokens)
+                vec_push(fields, ft[0])
+            }
+            par_expect(p, tokens, TK_RPAREN())
+        }
+        vec_push(variants, EnumVariant{ name: vname, fields: fields })
+        if par_check(p, tokens, TK_COMMA()) { par_advance(p, tokens) }
+    }
+    par_expect(p, tokens, TK_RBRACE())
+    
+    let mut v: vec<Decl> = vec_new()
+    vec_push(v, Decl::Enum(EnumDecl{ enum_tok: enum_tok, name: name, variants: variants }))
+    return v
+}
+
+fn parse_file(p: refmut<PState>, tokens: vec<Token>) -> FileNode {
+    let mut decls: vec<Decl> = vec_new()
+    loop {
+        if p.has_err { break }
+
+        if par_check(p, tokens, TK_EOF()) { break }
+        let decl = parse_decl(p, tokens)
+        if vec_len(decl) > 0 {
+            vec_push(decls, decl[0])
+        }
+        if p.has_err {
+            print(str_concat("Exited parse loop due to error: ", p.errmsg))
+            break
+        }
+    }
+    return FileNode{ name: "out.cnd", decls: decls }
+}
+
 
 ## ── main ──────────────────────────────────────────────────────────────────────
 fn main() -> unit {
@@ -664,15 +1530,22 @@ fn main() -> unit {
 
     let tokens = lex_source(src)
     let n = vec_len(tokens)
+    print("Lexed tokens successfully")
+    
     let mut p: PState = PState{
+        next_expr_id: 0,
         pos:      0,
         n_tokens: n,
         has_err:  false,
         errmsg:   ""
     }
-    let mut stats: Stats = Stats{ fn_count: 0, struct_count: 0 }
-    parse_top_level(refmut(p), tokens, refmut(stats))
-    print("---")
-    print(str_concat(int_to_str(stats.fn_count), str_concat(" fn, ", str_concat(int_to_str(stats.struct_count), " struct"))))
+    
+    let ast = parse_file(refmut(p), tokens)
+    if p.has_err {
+        print(str_concat("Parse error: ", p.errmsg))
+    } else {
+        print(str_concat("Successfully parsed ", ast.name))
+        print("AST generated.")
+    }
     return unit
 }

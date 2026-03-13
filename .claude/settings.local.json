@@ -49,7 +49,23 @@
       "Bash(go test ./typeck/... -run \"TestComptime\" -v)",
       "Bash(go test ./tests/... -run \"TestComptime\" -v)",
       "Bash(go test ./tests/... -run \"TestComptimeSquare\" -v)",
-      "Bash(go test ./typeck/... -run \"TestSecret|TestReveal\" -v)"
+      "Bash(go test ./typeck/... -run \"TestSecret|TestReveal\" -v)",
+      "Bash(go build -o candorc .)",
+      "Bash(./candorc ../examples/sieve.cnd -o /tmp/sieve)",
+      "Bash(./candorc ../examples/sieve.cnd)",
+      "Bash(time ./sieve.exe)",
+      "Bash(gcc -O2 -o /tmp/sieve_o2.exe d:/SWC/CandorSWC/examples/sieve.c)",
+      "Bash(time /tmp/sieve_o2.exe)",
+      "Bash(./candorc ../examples/wordfreq.cnd)",
+      "Bash(/tmp/wordfreq.exe)",
+      "Bash(d:/SWC/CandorSWC/examples/wordfreq.exe)",
+      "Bash(./candorc ../examples/candor_lexer.cnd)",
+      "Bash(D:/SWC/CandorSWC/examples/candor_lexer.exe)",
+      "Bash(d:/SWC/CandorSWC/examples/candor_lexer.exe)",
+      "Bash(./candorc ../examples/candor_parser.cnd)",
+      "Bash(./examples/candor_parser.exe)",
+      "Bash(examples/candor_parser.exe)",
+      "Bash(/d/SWC/CandorSWC/examples/candor_parser.exe)"
     ]
   }
 }
