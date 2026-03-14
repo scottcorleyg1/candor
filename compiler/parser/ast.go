@@ -359,6 +359,19 @@ type BreakExpr struct {
 func (e *BreakExpr) Pos() lexer.Token { return e.BreakTok }
 func (e *BreakExpr) exprNode()        {}
 
+// BlockExpr: { stmts... }
+// Used as the arm body in multi-statement match/must arms.
+// It implements Expr so it can be used directly as a MustArm.Body.
+// The block's value is unit; side effects are the stmts inside.
+type BlockExpr struct {
+	LBrace lexer.Token
+	Stmts  []Stmt
+	RBrace lexer.Token
+}
+
+func (e *BlockExpr) Pos() lexer.Token { return e.LBrace }
+func (e *BlockExpr) exprNode()        {}
+
 // PathExpr: Head::Tail — used for enum variant construction and patterns.
 // e.g. Shape::Circle, Token::EOF
 type PathExpr struct {

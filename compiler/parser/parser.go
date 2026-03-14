@@ -943,8 +943,11 @@ func (p *parser) parseMustArms() ([]MustArm, error) {
 	return arms, nil
 }
 
-// parseMustArmBody handles `=> expr`, `=> return expr`, and `=> break` arm bodies.
+// parseMustArmBody handles `=> expr`, `=> return expr`, `=> break`, and `=> { stmts... }` arm bodies.
 func (p *parser) parseMustArmBody() (Expr, error) {
+	if p.check(lexer.TokLBrace) {
+		return p.parseBlockExpr()
+	}
 	if p.check(lexer.TokReturn) {
 		retTok := p.advance()
 		val, err := p.parseExpr()
@@ -958,6 +961,28 @@ func (p *parser) parseMustArmBody() (Expr, error) {
 		return &BreakExpr{BreakTok: breakTok}, nil
 	}
 	return p.parseExpr()
+}
+
+// parseBlockExpr parses a `{ stmts... }` block as an expression.
+// Used in multi-statement match/must arm bodies.
+func (p *parser) parseBlockExpr() (*BlockExpr, error) {
+	lbrace, err := p.expect(lexer.TokLBrace)
+	if err != nil {
+		return nil, err
+	}
+	var stmts []Stmt
+	for !p.check(lexer.TokRBrace) && !p.check(lexer.TokEOF) {
+		stmt, err := p.parseStmt()
+		if err != nil {
+			return nil, err
+		}
+		stmts = append(stmts, stmt)
+	}
+	rbrace, err := p.expect(lexer.TokRBrace)
+	if err != nil {
+		return nil, err
+	}
+	return &BlockExpr{LBrace: lbrace, Stmts: stmts, RBrace: rbrace}, nil
 }
 
 func (p *parser) parseMatchExpr() (*MatchExpr, error) {

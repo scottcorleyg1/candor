@@ -943,6 +943,16 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 	case *parser.PathExpr:
 		return c.inferPathExpr(e, sc)
 
+	case *parser.BlockExpr:
+		// Multi-statement match arm block — executes stmts, yields unit.
+		inner := newScope(sc)
+		for _, stmt := range e.Stmts {
+			if err := c.checkStmt(stmt, inner, hint); err != nil {
+				return nil, err
+			}
+		}
+		return c.record(e, TUnit), nil
+
 	default:
 		return nil, fmt.Errorf("unhandled Expr %T", expr)
 	}

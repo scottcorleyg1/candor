@@ -1444,6 +1444,23 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 	case *parser.BreakExpr:
 		sb.WriteString("break")
 
+	case *parser.BlockExpr:
+		// Multi-statement match arm block.
+		// Emitted as a GNU statement expression: ({ stmt1; stmt2; ...; 0; })
+		// This allows a block to appear in expression position in C.
+		// Requires GCC or Clang (both already required by Candor's C backend).
+		// emitExpr has no depth parameter; match arms always appear at body
+		// depth 1 inside a function, so we write via the main sink at depth 2.
+		sb.WriteString("({\n")
+		for _, stmt := range ex.Stmts {
+			if err := e.emitStmt(stmt, 2); err != nil {
+				return err
+			}
+		}
+		// Trailing 0 gives the GNU statement expression a value of type int.
+		sb.WriteString(indent(2) + "0;\n")
+		sb.WriteString(indent(1) + "})")
+
 	case *parser.CallExpr:
 		// Comptime-evaluated pure function call — emit constant directly.
 		if v, ok := e.res.ComptimeValues[ex]; ok {
