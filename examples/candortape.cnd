@@ -1,0 +1,105 @@
+## CandorTape: A professional and family-friendly esoteric language interpreter.
+## Demonstrates: vec<u8>, str, match, and AI safety contracts (requires).
+
+## --- Safety Helpers with Semantic Contracts ---
+
+fn get_tape(tape: vec<u8>, ptr: i64) -> u8 
+    requires ptr >= 0
+    requires ptr < 65536
+{
+    return tape[ptr]
+}
+
+fn set_tape(tape: vec<u8>, ptr: i64, val: u8) -> unit 
+    requires ptr >= 0
+    requires ptr < 65536
+{
+    tape[ptr] = val
+    return unit
+}
+
+fn move_ptr(ptr: i64, delta: i64) -> i64 
+{
+    let mut n = ptr + delta
+    if n >= 65536 { n = 0 }
+    if n < 0 { n = 65535 }
+    return n
+}
+
+## --- Implementation ---
+
+fn run_tape(source: str) -> unit effects(io) {
+    let mut tape: vec<u8> = vec_new()
+    let mut i: i64 = 0
+    loop {
+        if i >= 65536 { break }
+        vec_push(tape, 0)
+        i = i + 1
+    }
+
+    let mut ptr: i64 = 0
+    let mut pc: i64 = 0
+    let len: i64 = str_len(source)
+
+    let u1: u8 = 1
+    let i1: i64 = 1
+    let i0: i64 = 0
+
+    loop {
+        if pc >= len { break }
+        if pc < i0 { break }
+        
+        let cmd = source[pc]
+        
+        if cmd == 43 {      ## '+'
+            let val = get_tape(tape, ptr)
+            set_tape(tape, ptr, val + u1)
+        } else if cmd == 45 { ## '-'
+            let val = get_tape(tape, ptr)
+            set_tape(tape, ptr, val - u1)
+        } else if cmd == 62 { ## '>'
+            ptr = move_ptr(ptr, i1)
+        } else if cmd == 60 { ## '<'
+            ptr = move_ptr(ptr, -i1)
+        } else if cmd == 46 { ## '.'
+            let val = get_tape(tape, ptr)
+            print_char(val)
+        } else if cmd == 44 { ## ','
+        } else if cmd == 91 { ## '['
+            if get_tape(tape, ptr) == 0 {
+                let mut depth: i64 = 1
+                loop {
+                    pc = pc + i1
+                    if pc >= len { break }
+                    let c = source[pc]
+                    if c == 91 { depth = depth + i1 }
+                    else if c == 93 { depth = depth - i1 }
+                    if depth == i0 { break }
+                }
+            }
+        } else if cmd == 93 { ## ']'
+            if get_tape(tape, ptr) != 0 {
+                let mut depth: i64 = 1
+                loop {
+                    pc = pc - i1
+                    if pc < i0 { break }
+                    let c = source[pc]
+                    if c == 93 { depth = depth + i1 }
+                    else if c == 91 { depth = depth - i1 }
+                    if depth == i0 { break }
+                }
+            }
+        }
+        
+        pc = pc + i1
+    }
+    return unit
+}
+
+fn main() -> unit effects(io) {
+    ## Hello World in CandorTape
+    let hello = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
+    run_tape(hello)
+    print("") ## Newline at end
+    return unit
+}

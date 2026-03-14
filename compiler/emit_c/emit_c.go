@@ -1796,6 +1796,16 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 		}
 		sb.WriteByte(')')
 		return true, nil
+	case "print_char":
+		if len(args) != 1 {
+			return false, nil
+		}
+		sb.WriteString("putchar(")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteString(")")
+		return true, nil
 	}
 
 	// Zero-argument stdin builtins.

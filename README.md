@@ -32,6 +32,8 @@ Every side effect is declared. Every error must be handled. Every contract betwe
 
 This makes Candor unusually well-suited to the way software is being built today — where AI agents read, write, and reason about code alongside humans. A language that is honest with humans is honest with agents for exactly the same reasons.
 
+By minimizing ambiguity, we also minimize **Token Overhead**. Candor allows AI agents to operate more **fiscally and energy efficiently**, reducing operational costs for remote APIs and lowering CPU/GPU utilization for local models.
+
 ---
 
 ## A Taste of Candor

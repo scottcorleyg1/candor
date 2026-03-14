@@ -379,6 +379,7 @@ var Builtins = map[string]*FnType{
 	"read_file":   {Params: []Type{TStr}, Ret: &GenType{Con: "result", Params: []Type{TStr, TStr}}},
 	"write_file":  {Params: []Type{TStr, TStr}, Ret: &GenType{Con: "result", Params: []Type{TUnit, TStr}}},
 	"append_file": {Params: []Type{TStr, TStr}, Ret: &GenType{Con: "result", Params: []Type{TUnit, TStr}}},
+	"print_char":  {Params: []Type{TU8}, Ret: TUnit},
 }
 
 // BuiltinEffects records the known effects of built-in functions.
@@ -398,6 +399,7 @@ var BuiltinEffects = map[string]*parser.EffectsAnnotation{
 	"read_file":   {Kind: parser.EffectsDecl, Names: []string{"io"}},
 	"write_file":  {Kind: parser.EffectsDecl, Names: []string{"io"}},
 	"append_file": {Kind: parser.EffectsDecl, Names: []string{"io"}},
+	"print_char":  {Kind: parser.EffectsDecl, Names: []string{"io"}},
 }
 
 func (c *checker) checkFile(file *parser.File) error {
