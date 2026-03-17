@@ -2129,3 +2129,7 @@ func TestM9ParserSource(t *testing.T) {
 func TestM9TypeckSource(t *testing.T) {
 	checkSource(t, filepath.Join("..", "..", "src", "compiler", "typeck.cnd"))
 }
+
+func TestM55WasmStdSource(t *testing.T) {
+	checkSource(t, filepath.Join("..", "..", "src", "std", "wasm.cnd"))
+}

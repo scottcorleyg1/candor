@@ -31,12 +31,13 @@ Usage:
   candorc build --backend=llvm                build via LLVM IR text (requires clang)
   candorc build --sanitize=<kind>             enable sanitizer(s): address, undefined, memory, leak, thread
   candorc build --target=<triple>             cross-compile for a specific target triple
+  candorc build --target=wasm32               compile to WebAssembly (.wasm via clang/wasm-ld)
   candorc fmt   [file.cnd ...]                format source files in-place
   candorc test  [file.cnd ...]                run #test-annotated functions
   candorc lsp                                 start the LSP server (stdin/stdout, JSON-RPC 2.0)
 
 Flags may be combined: candorc build --debug --backend=llvm --sanitize=address,undefined
-Target examples: aarch64-unknown-linux-gnu  x86_64-apple-macosx14.0  wasm32-unknown-unknown
+Target examples: aarch64-unknown-linux-gnu  x86_64-apple-macosx14.0  wasm32 (alias for wasm32-unknown-unknown)
 
 A project is identified by a Candor.toml manifest file.`
 
@@ -383,14 +384,35 @@ func runCompileLLVM(srcPaths []string, outPath string, cfg BuildConfig) error {
 
 	if outPath == "" {
 		outPath = base
-		if isWindows() {
+		switch {
+		case cfg.isWasm():
+			outPath += ".wasm"
+		case isWindows():
 			outPath += ".exe"
 		}
 	}
 
 	clang := findClang()
-	clangArgs := []string{"-o", outPath, llPath}
-	clangArgs = append(cfg.ccFlags(), clangArgs...)
+	var clangArgs []string
+	if cfg.isWasm() {
+		// WebAssembly: use clang's wasm32 target with wasm-ld compatible flags.
+		// -nostdlib: no host libc; --no-entry: no _start required (library-style);
+		// --export-all: export every non-hidden function to the .wasm export table.
+		clangArgs = []string{
+			"--target=wasm32-unknown-unknown",
+			"-nostdlib",
+			"-Wl,--no-entry",
+			"-Wl,--export-all",
+			"-o", outPath, llPath,
+		}
+		if cfg.Release {
+			clangArgs = append([]string{"-O2"}, clangArgs...)
+		} else if cfg.Debug {
+			clangArgs = append([]string{"-g", "-O0"}, clangArgs...)
+		}
+	} else {
+		clangArgs = append(cfg.ccFlags(), "-o", outPath, llPath)
+	}
 	cmd := exec.Command(clang, clangArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -577,13 +599,23 @@ func (cfg BuildConfig) ccFlags() []string {
 }
 
 // parseTarget extracts the target triple from a --target=<triple> flag.
+// "wasm32" is normalized to the canonical "wasm32-unknown-unknown" triple.
 func parseTarget(args []string) string {
 	for _, a := range args {
 		if strings.HasPrefix(a, "--target=") {
-			return strings.TrimPrefix(a, "--target=")
+			t := strings.TrimPrefix(a, "--target=")
+			if t == "wasm32" {
+				return "wasm32-unknown-unknown"
+			}
+			return t
 		}
 	}
 	return ""
+}
+
+// isWasm reports whether the build targets WebAssembly.
+func (cfg BuildConfig) isWasm() bool {
+	return strings.HasPrefix(cfg.Target, "wasm32")
 }
 
 // parseSanitizers extracts sanitizer names from --sanitize=a,b,c flags.

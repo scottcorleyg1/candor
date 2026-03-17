@@ -1,0 +1,53 @@
+## std/wasm.cnd — WebAssembly host bindings for Candor
+##
+## These extern fn declarations expose browser and WASI APIs to Candor programs
+## compiled with --target=wasm32.  Each function maps to a JS import or WASI
+## system call that the host environment must provide.
+##
+## Usage:
+##   candorc build --target=wasm32 --backend=llvm src/main.cnd
+##
+## In JavaScript (browser), wire imports before instantiating the module:
+##   const imports = {
+##     env: {
+##       wasm_console_log: (ptr, len) => { ... },
+##       wasm_now_ms:      ()          => performance.now(),
+##     }
+##   };
+##   WebAssembly.instantiateStreaming(fetch("main.wasm"), imports);
+
+## ── Console / debug output ────────────────────────────────────────────────────
+## wasm_console_log: write a UTF-8 string to the browser console.
+## ptr/len are linear-memory byte offset and length.
+extern fn wasm_console_log(ptr: u32, len: u32) -> unit effects(io)
+
+## ── Memory query ──────────────────────────────────────────────────────────────
+## wasm_memory_size: returns current memory size in 64 KiB pages.
+extern fn wasm_memory_size() -> u32
+
+## wasm_memory_grow: grow memory by `delta` 64 KiB pages.
+## Returns previous page count, or -1 on failure (cast result to i32 to check).
+extern fn wasm_memory_grow(delta: u32) -> u32
+
+## ── Timing ────────────────────────────────────────────────────────────────────
+## wasm_now_ms: host-provided wall-clock milliseconds (e.g. performance.now()).
+extern fn wasm_now_ms() -> f64 effects(time)
+
+## ── Random ────────────────────────────────────────────────────────────────────
+## wasm_random_u32: host-provided random u32 (e.g. crypto.getRandomValues).
+extern fn wasm_random_u32() -> u32 effects(rand)
+
+## ── DOM / canvas (browser only) ───────────────────────────────────────────────
+## wasm_canvas_fill_rect: draw a filled rectangle on the default canvas context.
+extern fn wasm_canvas_fill_rect(x: f64, y: f64, w: f64, h: f64) -> unit effects(gpu)
+
+## wasm_canvas_set_fill_style: set fill color as a CSS string (ptr/len = UTF-8).
+extern fn wasm_canvas_set_fill_style(ptr: u32, len: u32) -> unit effects(gpu)
+
+## ── WASI preview-1 stubs (standalone / server WASM) ─────────────────────────
+## fd_write: write iovec to file descriptor; returns bytes written.
+## fd=1 is stdout, fd=2 is stderr.
+extern fn fd_write(fd: u32, iov_ptr: u32, iov_len: u32, nwritten_ptr: u32) -> u32 effects(io)
+
+## proc_exit: terminate the WASI process with the given exit code.
+extern fn proc_exit(code: u32) -> unit effects(sys)

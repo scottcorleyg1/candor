@@ -44,12 +44,15 @@ traits, effects, contracts, pattern matching, and a standard library.
 
 ## Next Up
 
-### M5.5 — WebAssembly target
-Emit WASM via LLVM's `wasm32-unknown-unknown` target.
+### M5.5 — WebAssembly target ✓ DONE
+Emit WASM via LLVM's `wasm32-unknown-unknown` target using clang/wasm-ld.
 
-- `--target=wasm32` selects WASM emission
-- Provide a `std::wasm` module with browser-side `extern fn` bindings
-- Candor↔JS interop layer for passing strings and typed values
+- `--target=wasm32` normalizes to `wasm32-unknown-unknown`; recognized by `isWasm()`
+- WASM-specific clang flags: `-nostdlib -Wl,--no-entry -Wl,--export-all`
+- Output extension `.wasm` (instead of binary / `.exe`)
+- `src/std/wasm.cnd`: browser and WASI extern fn bindings — `wasm_console_log`,
+  `wasm_now_ms`, `wasm_random_u32`, `wasm_canvas_fill_rect`, `fd_write`, `proc_exit`
+- `TestM55WasmStdSource` passes
 
 ---
 
