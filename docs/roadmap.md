@@ -197,11 +197,19 @@ A recursive-descent parser producing a Candor-native AST (`src/compiler/parser.c
 - All declaration forms: fn, struct, enum, extern fn, const
 - `parse(tokens, name)` entry point; `TestM9ParserSource` passes
 
-### M9.5 — Type checker written in Candor
+### M9.5 — Type checker written in Candor *(in progress — Phase 1 done)*
 The hardest phase. The typeck pass is ~3000 lines of Go and maintains several maps over the AST.
-- Requires `map<K,V>` runtime operations (M9.1)
-- Requires passing `box<T>` values as keys (needs `Hash` trait — M3 already done)
-- Can be done incrementally: start with type inference only, add effects/contracts later
+Implemented incrementally; each phase verified by `TestM9TypeckSource`.
+
+**Phase 1 ✓** (`src/compiler/typeck.cnd`, 450 lines): Type system representation
+(`Type` struct with kind/prim/name/params/fn_ret), all primitive types, type constructors,
+`ty_show`/`ty_eq`/`ty_coerce`, `ScopeStack` (linked-list scopes via `map<str,Type>`),
+`TypeEnv` (struct/enum/fn registries + error/warning accumulators), `resolve_type` (TypeExpr → Type).
+
+**Phase 2** (next): signature collection pass — register all struct/enum/fn declarations into TypeEnv.
+**Phase 3**: expression type inference.
+**Phase 4**: statement + declaration checking.
+**Phase 5**: file-level entry point + full integration.
 
 ### M9.6 — Code generator written in Candor (C backend first)
 Start with C emission since the output is plain text and easy to debug.

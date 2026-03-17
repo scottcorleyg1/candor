@@ -2125,3 +2125,7 @@ func TestM9LexerSource(t *testing.T) {
 func TestM9ParserSource(t *testing.T) {
 	checkSource(t, filepath.Join("..", "..", "src", "compiler", "parser.cnd"))
 }
+
+func TestM9TypeckSource(t *testing.T) {
+	checkSource(t, filepath.Join("..", "..", "src", "compiler", "typeck.cnd"))
+}

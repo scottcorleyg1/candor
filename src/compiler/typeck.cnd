@@ -1,0 +1,444 @@
+## typeck.cnd — Candor type checker written in Candor  (M9.5)
+##
+## Input:  ParsedFile (from parser.cnd)
+## Output: result<TypedFile, str>
+##
+## Phased build — each phase verified before the next appends.
+## Phase 1: type representation, type environment, type resolution.
+
+## ── primitive type tags ───────────────────────────────────────────────────────
+fn TY_UNKNOWN() -> i64 pure { return 0  }
+fn TY_I8()      -> i64 pure { return 1  }
+fn TY_I16()     -> i64 pure { return 2  }
+fn TY_I32()     -> i64 pure { return 3  }
+fn TY_I64()     -> i64 pure { return 4  }
+fn TY_U8()      -> i64 pure { return 5  }
+fn TY_U16()     -> i64 pure { return 6  }
+fn TY_U32()     -> i64 pure { return 7  }
+fn TY_U64()     -> i64 pure { return 8  }
+fn TY_I128()    -> i64 pure { return 9  }
+fn TY_U128()    -> i64 pure { return 10 }
+fn TY_F32()     -> i64 pure { return 11 }
+fn TY_F64()     -> i64 pure { return 12 }
+fn TY_BOOL()    -> i64 pure { return 13 }
+fn TY_STR()     -> i64 pure { return 14 }
+fn TY_UNIT()    -> i64 pure { return 15 }
+
+## ── type kind tags ────────────────────────────────────────────────────────────
+fn TK_PRIM()   -> i64 pure { return 1 }  ## i64, bool, str, ...
+fn TK_GEN()    -> i64 pure { return 2 }  ## vec<T>, option<T>, result<T,E>, ...
+fn TK_FN()     -> i64 pure { return 3 }  ## fn(A,B) -> R
+fn TK_NAMED()  -> i64 pure { return 4 }  ## user struct or enum (looked up by name)
+fn TK_VAR()    -> i64 pure { return 5 }  ## unresolved type variable (for generics)
+fn TK_NONE()   -> i64 pure { return 6 }  ## the bare `none` literal type
+
+## ── Type ──────────────────────────────────────────────────────────────────────
+## A single flat struct covering all type shapes.
+## kind == TK_PRIM  → prim field holds TY_* tag
+## kind == TK_GEN   → name = constructor ("vec","option","result","box",...)
+##                     params = type arguments
+## kind == TK_FN    → params = param types, fn_ret = return type
+## kind == TK_NAMED → name = struct/enum name
+## kind == TK_VAR   → name = type variable name
+## kind == TK_NONE  → the polymorphic none; coerces to option<T>
+
+struct Type {
+    kind:   i64
+    prim:   i64
+    name:   str
+    params: vec<Type>
+    fn_ret: option<box<Type>>
+}
+
+## ── type constructors ─────────────────────────────────────────────────────────
+fn ty_prim(p: i64) -> Type {
+    let mut t = Type{ kind: TK_PRIM(), prim: p, name: "", params: vec_new(), fn_ret: none }
+    return t
+}
+
+fn ty_named(name: str) -> Type {
+    return Type{ kind: TK_NAMED(), prim: 0, name: name, params: vec_new(), fn_ret: none }
+}
+
+fn ty_var(name: str) -> Type {
+    return Type{ kind: TK_VAR(), prim: 0, name: name, params: vec_new(), fn_ret: none }
+}
+
+fn ty_none() -> Type {
+    return Type{ kind: TK_NONE(), prim: 0, name: "none", params: vec_new(), fn_ret: none }
+}
+
+fn ty_gen(con: str, params: vec<Type>) -> Type {
+    return Type{ kind: TK_GEN(), prim: 0, name: con, params: params, fn_ret: none }
+}
+
+fn ty_gen1(con: str, p: Type) -> Type {
+    let mut ps: vec<Type> = vec_new()
+    vec_push(ps, p)
+    return ty_gen(con, ps)
+}
+
+fn ty_gen2(con: str, a: Type, b: Type) -> Type {
+    let mut ps: vec<Type> = vec_new()
+    vec_push(ps, a)
+    vec_push(ps, b)
+    return ty_gen(con, ps)
+}
+
+fn ty_fn(params: vec<Type>, ret: Type) -> Type {
+    return Type{ kind: TK_FN(), prim: 0, name: "", params: params, fn_ret: some(box_new(ret)) }
+}
+
+## ── well-known type singletons ────────────────────────────────────────────────
+fn ty_i8()   -> Type pure { return ty_prim(TY_I8())   }
+fn ty_i16()  -> Type pure { return ty_prim(TY_I16())  }
+fn ty_i32()  -> Type pure { return ty_prim(TY_I32())  }
+fn ty_i64()  -> Type pure { return ty_prim(TY_I64())  }
+fn ty_u8()   -> Type pure { return ty_prim(TY_U8())   }
+fn ty_u16()  -> Type pure { return ty_prim(TY_U16())  }
+fn ty_u32()  -> Type pure { return ty_prim(TY_U32())  }
+fn ty_u64()  -> Type pure { return ty_prim(TY_U64())  }
+fn ty_i128() -> Type pure { return ty_prim(TY_I128()) }
+fn ty_u128() -> Type pure { return ty_prim(TY_U128()) }
+fn ty_f32()  -> Type pure { return ty_prim(TY_F32())  }
+fn ty_f64()  -> Type pure { return ty_prim(TY_F64())  }
+fn ty_bool() -> Type pure { return ty_prim(TY_BOOL()) }
+fn ty_str()  -> Type pure { return ty_prim(TY_STR())  }
+fn ty_unit() -> Type pure { return ty_prim(TY_UNIT()) }
+
+fn ty_unknown() -> Type pure { return ty_prim(TY_UNKNOWN()) }
+
+## ── type display ──────────────────────────────────────────────────────────────
+fn ty_show(t: Type) -> str {
+    if t.kind == TK_PRIM() {
+        if t.prim == TY_I8()    { return "i8" }
+        if t.prim == TY_I16()   { return "i16" }
+        if t.prim == TY_I32()   { return "i32" }
+        if t.prim == TY_I64()   { return "i64" }
+        if t.prim == TY_U8()    { return "u8" }
+        if t.prim == TY_U16()   { return "u16" }
+        if t.prim == TY_U32()   { return "u32" }
+        if t.prim == TY_U64()   { return "u64" }
+        if t.prim == TY_I128()  { return "i128" }
+        if t.prim == TY_U128()  { return "u128" }
+        if t.prim == TY_F32()   { return "f32" }
+        if t.prim == TY_F64()   { return "f64" }
+        if t.prim == TY_BOOL()  { return "bool" }
+        if t.prim == TY_STR()   { return "str" }
+        if t.prim == TY_UNIT()  { return "unit" }
+        return "unknown"
+    }
+    if t.kind == TK_NAMED() { return t.name }
+    if t.kind == TK_VAR()   { return t.name }
+    if t.kind == TK_NONE()  { return "none" }
+    if t.kind == TK_GEN() {
+        let n = vec_len(t.params) as i64
+        if n == 0 { return t.name }
+        let mut s = str_concat(t.name, "<")
+        let mut i: i64 = 0
+        loop {
+            if i >= n { break }
+            if i > 0 { s = str_concat(s, ", ") }
+            s = str_concat(s, ty_show(t.params[i as u64]))
+            i = i + 1
+        }
+        return str_concat(s, ">")
+    }
+    if t.kind == TK_FN() {
+        let mut s = "fn("
+        let n = vec_len(t.params) as i64
+        let mut i: i64 = 0
+        loop {
+            if i >= n { break }
+            if i > 0 { s = str_concat(s, ", ") }
+            s = str_concat(s, ty_show(t.params[i as u64]))
+            i = i + 1
+        }
+        s = str_concat(s, ") -> ")
+        let ret = t.fn_ret must {
+            some(r) => box_deref(r)
+            none    => ty_unit()
+        }
+        return str_concat(s, ty_show(ret))
+    }
+    return "?"
+}
+
+## ── type equality ─────────────────────────────────────────────────────────────
+fn ty_eq(a: Type, b: Type) -> bool {
+    if a.kind != b.kind { return false }
+    if a.kind == TK_PRIM()  { return a.prim == b.prim }
+    if a.kind == TK_NAMED() { return str_eq(a.name, b.name) }
+    if a.kind == TK_VAR()   { return str_eq(a.name, b.name) }
+    if a.kind == TK_NONE()  { return true }
+    if a.kind == TK_GEN() {
+        if not str_eq(a.name, b.name) { return false }
+        let na = vec_len(a.params) as i64
+        let nb = vec_len(b.params) as i64
+        if na != nb { return false }
+        let mut i: i64 = 0
+        loop {
+            if i >= na { break }
+            if not ty_eq(a.params[i as u64], b.params[i as u64]) { return false }
+            i = i + 1
+        }
+        return true
+    }
+    if a.kind == TK_FN() {
+        let na = vec_len(a.params) as i64
+        let nb = vec_len(b.params) as i64
+        if na != nb { return false }
+        let mut i: i64 = 0
+        loop {
+            if i >= na { break }
+            if not ty_eq(a.params[i as u64], b.params[i as u64]) { return false }
+            i = i + 1
+        }
+        let ra = a.fn_ret must { some(r) => box_deref(r)   none => ty_unit() }
+        let rb = b.fn_ret must { some(r) => box_deref(r)   none => ty_unit() }
+        return ty_eq(ra, rb)
+    }
+    return false
+}
+
+## none coerces to option<T> for any T
+fn ty_coerce(src: Type, dst: Type) -> bool {
+    if ty_eq(src, dst) { return true }
+    if src.kind == TK_NONE() {
+        if dst.kind == TK_GEN() and str_eq(dst.name, "option") { return true }
+    }
+    return false
+}
+
+## ── struct field registry ─────────────────────────────────────────────────────
+struct FieldDef { name: str, typ: Type }
+struct StructDef { name: str, fields: vec<FieldDef> }
+
+fn struct_def_get_field(sd: ref<StructDef>, name: str) -> option<Type> {
+    let n = vec_len(sd.fields) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let f = sd.fields[i as u64]
+        if str_eq(f.name, name) { return some(f.typ) }
+        i = i + 1
+    }
+    return none
+}
+
+## ── enum variant registry ─────────────────────────────────────────────────────
+struct VariantDef { name: str, payload: option<Type> }
+struct EnumDef    { name: str, variants: vec<VariantDef> }
+
+fn enum_def_get_variant(ed: ref<EnumDef>, name: str) -> option<VariantDef> {
+    let n = vec_len(ed.variants) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let v = ed.variants[i as u64]
+        if str_eq(v.name, name) { return some(v) }
+        i = i + 1
+    }
+    return none
+}
+
+## ── function signature ────────────────────────────────────────────────────────
+struct ParamSig { name: str, typ: Type }
+struct FnSig {
+    params:      vec<ParamSig>
+    ret:         Type
+    is_generic:  bool
+}
+
+## ── scope (linked list of name→type bindings) ─────────────────────────────────
+struct Scope {
+    bindings: map<str, Type>
+    has_parent: bool
+    parent_idx: i64
+}
+
+struct ScopeStack {
+    scopes: vec<Scope>
+}
+
+fn scope_stack_new() -> ScopeStack {
+    let mut s = ScopeStack{ scopes: vec_new() }
+    return s
+}
+
+fn scope_push(ss: refmut<ScopeStack>) -> i64 {
+    let idx = vec_len(ss.scopes) as i64
+    let parent_idx = idx - 1
+    let has_parent = idx > 0
+    let sc = Scope{ bindings: map_new(), has_parent: has_parent, parent_idx: parent_idx }
+    vec_push(ss.scopes, sc)
+    return idx
+}
+
+fn scope_pop(ss: refmut<ScopeStack>) -> unit {
+    let n = vec_len(ss.scopes) as i64
+    if n > 0 {
+        vec_pop(ss.scopes)
+    }
+    return unit
+}
+
+fn scope_define(ss: refmut<ScopeStack>, name: str, typ: Type) -> unit {
+    let idx = vec_len(ss.scopes) as i64 - 1
+    if idx < 0 { return unit }
+    map_insert(ss.scopes[idx as u64].bindings, name, typ)
+    return unit
+}
+
+fn scope_lookup(ss: ref<ScopeStack>, name: str) -> option<Type> {
+    let mut idx = vec_len(ss.scopes) as i64 - 1
+    loop {
+        if idx < 0 { break }
+        let sc = ss.scopes[idx as u64]
+        let t = map_get(sc.bindings, name) must {
+            some(v) => return some(v)
+            none    => unit
+        }
+        if not sc.has_parent { break }
+        idx = sc.parent_idx
+    }
+    return none
+}
+
+## ── type environment ──────────────────────────────────────────────────────────
+struct TypeEnv {
+    structs:  map<str, StructDef>
+    enums:    map<str, EnumDef>
+    fns:      map<str, FnSig>
+    errors:   vec<str>
+    warnings: vec<str>
+}
+
+fn type_env_new() -> TypeEnv {
+    return TypeEnv{
+        structs:  map_new(),
+        enums:    map_new(),
+        fns:      map_new(),
+        errors:   vec_new(),
+        warnings: vec_new()
+    }
+}
+
+fn env_error(env: refmut<TypeEnv>, msg: str) -> unit {
+    vec_push(env.errors, msg)
+    return unit
+}
+
+fn env_warn(env: refmut<TypeEnv>, msg: str) -> unit {
+    vec_push(env.warnings, msg)
+    return unit
+}
+
+fn env_has_errors(env: ref<TypeEnv>) -> bool {
+    return vec_len(env.errors) as i64 > 0
+}
+
+## ── primitive name lookup ─────────────────────────────────────────────────────
+fn lookup_prim(name: str) -> option<Type> {
+    if str_eq(name, "i8")    { return some(ty_i8())    }
+    if str_eq(name, "i16")   { return some(ty_i16())   }
+    if str_eq(name, "i32")   { return some(ty_i32())   }
+    if str_eq(name, "i64")   { return some(ty_i64())   }
+    if str_eq(name, "u8")    { return some(ty_u8())    }
+    if str_eq(name, "u16")   { return some(ty_u16())   }
+    if str_eq(name, "u32")   { return some(ty_u32())   }
+    if str_eq(name, "u64")   { return some(ty_u64())   }
+    if str_eq(name, "i128")  { return some(ty_i128())  }
+    if str_eq(name, "u128")  { return some(ty_u128())  }
+    if str_eq(name, "f32")   { return some(ty_f32())   }
+    if str_eq(name, "f64")   { return some(ty_f64())   }
+    if str_eq(name, "bool")  { return some(ty_bool())  }
+    if str_eq(name, "str")   { return some(ty_str())   }
+    if str_eq(name, "unit")  { return some(ty_unit())  }
+    return none
+}
+
+## ── AST type definitions (mirrored from parser.cnd) ─────────────────────────
+## When the full compiler is linked these come from parser.cnd.
+## Redeclared here so typeck.cnd is independently typecheckable.
+
+struct GenTy   { name: str, args: vec<TypeExpr> }
+struct FnTy    { params: vec<TypeExpr>, ret: box<TypeExpr> }
+struct TupleTy { elems: vec<TypeExpr> }
+
+enum TypeExpr {
+    Named(str),
+    Generic(box<GenTy>),
+    FnType(box<FnTy>),
+    TupleType(box<TupleTy>),
+}
+
+## ── type resolution helpers ───────────────────────────────────────────────────
+fn resolve_named(name: str, env: ref<TypeEnv>) -> result<Type, str> {
+    let prim = lookup_prim(name) must {
+        some(p) => return ok(p)
+        none    => unit
+    }
+    if map_contains(env.structs, name) { return ok(ty_named(name)) }
+    if map_contains(env.enums,   name) { return ok(ty_named(name)) }
+    return err(str_concat("unknown type: ", name))
+}
+
+fn resolve_type_args(args: vec<TypeExpr>, env: ref<TypeEnv>) -> result<vec<Type>, str> {
+    let mut resolved: vec<Type> = vec_new()
+    let n = vec_len(args) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let rt = resolve_type(args[i as u64], env) must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        vec_push(resolved, rt)
+        i = i + 1
+    }
+    return ok(resolved)
+}
+
+fn resolve_generic_type(g: box<GenTy>, env: ref<TypeEnv>) -> result<Type, str> {
+    let gt = box_deref(g)
+    let params = resolve_type_args(gt.args, env) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    return ok(ty_gen(gt.name, params))
+}
+
+fn resolve_fn_type_expr(f: box<FnTy>, env: ref<TypeEnv>) -> result<Type, str> {
+    let ft = box_deref(f)
+    let param_types = resolve_type_args(ft.params, env) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    let ret = resolve_type(box_deref(ft.ret), env) must {
+        ok(t) => t   err(e) => return err(e)
+    }
+    return ok(ty_fn(param_types, ret))
+}
+
+fn resolve_tuple_type_expr(tt: box<TupleTy>, env: ref<TypeEnv>) -> result<Type, str> {
+    let tup = box_deref(tt)
+    let elem_types = resolve_type_args(tup.elems, env) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    return ok(ty_gen("tuple", elem_types))
+}
+
+## ── type resolution (TypeExpr → Type) ────────────────────────────────────────
+fn resolve_type(te: TypeExpr, env: ref<TypeEnv>) -> result<Type, str> {
+    match te {
+        TypeExpr::Named(name)   => resolve_named(name, env)
+        TypeExpr::Generic(g)    => resolve_generic_type(g, env)
+        TypeExpr::FnType(f)     => resolve_fn_type_expr(f, env)
+        TypeExpr::TupleType(tt) => resolve_tuple_type_expr(tt, env)
+    }
+}
+
+## ── output type ───────────────────────────────────────────────────────────────
+struct TypedFile {
+    name:     str
+    errors:   vec<str>
+    warnings: vec<str>
+}
