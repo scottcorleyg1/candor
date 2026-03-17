@@ -321,6 +321,12 @@ func Coerce(src, dst Type) (Type, bool) {
 			}
 		}
 	}
+	// bare none (GenType{Con:"none"}) coerces to any option<T>
+	if fgen, ok := src.(*GenType); ok && fgen.Con == "none" {
+		if tgen, ok := dst.(*GenType); ok && tgen.Con == "option" {
+			return tgen, true
+		}
+	}
 	return nil, false
 }
 

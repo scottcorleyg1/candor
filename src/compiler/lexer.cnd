@@ -1,0 +1,634 @@
+## lexer.cnd — Candor lexer written in Candor  (M9.3)
+##
+## Input:  str   (full source file contents)
+## Output: vec<Token>  with a final TK_EOF entry
+##
+## No extern fn dependencies beyond the Candor standard library.
+## Token kinds are plain i64 constants (comptime-evaluated pure functions).
+
+## ── token kind constants ───────────────────────────────────────────────────────
+##   0–49  literals and identifiers
+fn TK_INT()      -> i64 pure { return 1  }  ## integer literal
+fn TK_FLOAT()    -> i64 pure { return 2  }  ## float literal
+fn TK_STR()      -> i64 pure { return 3  }  ## string literal
+fn TK_IDENT()    -> i64 pure { return 4  }  ## identifier
+fn TK_DIRECTIVE()-> i64 pure { return 5  }  ## #word directive
+fn TK_EOF()      -> i64 pure { return 6  }  ## end of file
+fn TK_ERROR()    -> i64 pure { return 7  }  ## unrecognised character
+
+##   10–39  punctuation
+fn TK_LPAREN()     -> i64 pure { return 10 }  ## (
+fn TK_RPAREN()     -> i64 pure { return 11 }  ## )
+fn TK_LBRACE()     -> i64 pure { return 12 }  ## {
+fn TK_RBRACE()     -> i64 pure { return 13 }  ## }
+fn TK_LBRACKET()   -> i64 pure { return 14 }  ## [
+fn TK_RBRACKET()   -> i64 pure { return 15 }  ## ]
+fn TK_COLON()      -> i64 pure { return 16 }  ## :
+fn TK_COLONCOLON() -> i64 pure { return 17 }  ## ::
+fn TK_COMMA()      -> i64 pure { return 18 }  ## ,
+fn TK_DOT()        -> i64 pure { return 19 }  ## .
+fn TK_DOTDOT()     -> i64 pure { return 20 }  ## ..
+fn TK_SEMICOLON()  -> i64 pure { return 21 }  ## ;
+fn TK_AMP()        -> i64 pure { return 22 }  ## &
+fn TK_AT()         -> i64 pure { return 23 }  ## @
+fn TK_USCORE()     -> i64 pure { return 24 }  ## _ (standalone wildcard)
+
+##   30–39  arithmetic / logic
+fn TK_PLUS()    -> i64 pure { return 30 }  ## +
+fn TK_MINUS()   -> i64 pure { return 31 }  ## -
+fn TK_STAR()    -> i64 pure { return 32 }  ## *
+fn TK_SLASH()   -> i64 pure { return 33 }  ## /
+fn TK_PERCENT() -> i64 pure { return 34 }  ## %
+
+##   40–49  compound assignment
+fn TK_PLUSEQ()    -> i64 pure { return 40 }  ## +=
+fn TK_MINUSEQ()   -> i64 pure { return 41 }  ## -=
+fn TK_STAREQ()    -> i64 pure { return 42 }  ## *=
+fn TK_SLASHEQ()   -> i64 pure { return 43 }  ## /=
+fn TK_PERCENTEQ() -> i64 pure { return 44 }  ## %=
+
+##   50–59  comparison / equality
+fn TK_EQ()      -> i64 pure { return 50 }  ## =
+fn TK_EQEQ()    -> i64 pure { return 51 }  ## ==
+fn TK_BANGEQ()  -> i64 pure { return 52 }  ## !=
+fn TK_BANG()    -> i64 pure { return 53 }  ## !
+fn TK_LT()      -> i64 pure { return 54 }  ## <
+fn TK_GT()      -> i64 pure { return 55 }  ## >
+fn TK_LTEQ()    -> i64 pure { return 56 }  ## <=
+fn TK_GTEQ()    -> i64 pure { return 57 }  ## >=
+
+##   60–69  arrows
+fn TK_ARROW()    -> i64 pure { return 60 }  ## ->
+fn TK_FATARROW() -> i64 pure { return 61 }  ## =>
+
+##   100+  keywords (one per keyword string)
+fn TK_FN()        -> i64 pure { return 100 }
+fn TK_LET()       -> i64 pure { return 101 }
+fn TK_RETURN()    -> i64 pure { return 102 }
+fn TK_IF()        -> i64 pure { return 103 }
+fn TK_ELSE()      -> i64 pure { return 104 }
+fn TK_MATCH()     -> i64 pure { return 105 }
+fn TK_LOOP()      -> i64 pure { return 106 }
+fn TK_WHILE()     -> i64 pure { return 107 }
+fn TK_BREAK()     -> i64 pure { return 108 }
+fn TK_CONTINUE()  -> i64 pure { return 109 }
+fn TK_FOR()       -> i64 pure { return 110 }
+fn TK_IN()        -> i64 pure { return 111 }
+fn TK_STRUCT()    -> i64 pure { return 112 }
+fn TK_ENUM()      -> i64 pure { return 113 }
+fn TK_EXTERN()    -> i64 pure { return 114 }
+fn TK_PURE()      -> i64 pure { return 115 }
+fn TK_CAP()       -> i64 pure { return 116 }
+fn TK_MUST()      -> i64 pure { return 117 }
+fn TK_MOVE()      -> i64 pure { return 118 }
+fn TK_SOME()      -> i64 pure { return 119 }
+fn TK_NONE()      -> i64 pure { return 120 }
+fn TK_OK()        -> i64 pure { return 121 }
+fn TK_ERR()       -> i64 pure { return 122 }
+fn TK_TRUE()      -> i64 pure { return 123 }
+fn TK_FALSE()     -> i64 pure { return 124 }
+fn TK_AND()       -> i64 pure { return 125 }
+fn TK_OR()        -> i64 pure { return 126 }
+fn TK_NOT()       -> i64 pure { return 127 }
+fn TK_FORALL()    -> i64 pure { return 128 }
+fn TK_EXISTS()    -> i64 pure { return 129 }
+fn TK_OLD()       -> i64 pure { return 130 }
+fn TK_EFFECTS()   -> i64 pure { return 131 }
+fn TK_REQUIRES()  -> i64 pure { return 132 }
+fn TK_ENSURES()   -> i64 pure { return 133 }
+fn TK_INVARIANT() -> i64 pure { return 134 }
+fn TK_ASSERT()    -> i64 pure { return 135 }
+fn TK_MODULE()    -> i64 pure { return 136 }
+fn TK_USE()       -> i64 pure { return 137 }
+fn TK_MUT()       -> i64 pure { return 138 }
+fn TK_SECRET()    -> i64 pure { return 139 }
+fn TK_REVEAL()    -> i64 pure { return 140 }
+fn TK_CONST()     -> i64 pure { return 141 }
+fn TK_IMPL()      -> i64 pure { return 142 }
+fn TK_AS()        -> i64 pure { return 143 }
+fn TK_TRAIT()     -> i64 pure { return 144 }
+
+## ── character predicates ───────────────────────────────────────────────────────
+fn is_alpha(c: u8) -> bool pure {
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+}
+
+fn is_digit(c: u8) -> bool pure {
+    return c >= 48 and c <= 57
+}
+
+fn is_hex_digit(c: u8) -> bool pure {
+    return is_digit(c) or (c >= 97 and c <= 102) or (c >= 65 and c <= 70)
+}
+
+fn is_alnum(c: u8) -> bool pure {
+    return is_alpha(c) or is_digit(c)
+}
+
+fn is_ws(c: u8) -> bool pure {
+    return c == 32 or c == 9 or c == 13 or c == 10
+}
+
+## ── Token and Lexer structs ────────────────────────────────────────────────────
+struct Token {
+    kind:   i64
+    lexeme: str
+    line:   i64
+}
+
+struct Lexer {
+    src:     str
+    src_len: i64
+    pos:     i64
+    line:    i64
+}
+
+fn make_tok(kind: i64, lexeme: str, line: i64) -> Token {
+    return Token{ kind: kind, lexeme: lexeme, line: line }
+}
+
+## ── lexer primitives ──────────────────────────────────────────────────────────
+fn lex_at_end(l: ref<Lexer>) -> bool {
+    return l.pos >= l.src_len
+}
+
+fn lex_peek(l: ref<Lexer>) -> u8 {
+    if l.pos >= l.src_len { return 0 }
+    return l.src[l.pos]
+}
+
+fn lex_peek2(l: ref<Lexer>) -> u8 {
+    if l.pos + 1 >= l.src_len { return 0 }
+    return l.src[l.pos + 1]
+}
+
+fn lex_advance(l: refmut<Lexer>) -> u8 {
+    let c = l.src[l.pos]
+    l.pos = l.pos + 1
+    if c == 10 { l.line = l.line + 1 }
+    return c
+}
+
+## ── whitespace + ## comment skipping ─────────────────────────────────────────
+fn lex_skip_ws(l: refmut<Lexer>) -> unit {
+    loop {
+        if lex_at_end(l) { break }
+        let c = lex_peek(l)
+        if is_ws(c) {
+            lex_advance(l)
+        } else if c == 35 and lex_peek2(l) == 35 {
+            ## ## line comment: skip to end of line
+            loop {
+                if lex_at_end(l) { break }
+                let ch = lex_advance(l)
+                if ch == 10 { break }
+            }
+        } else {
+            break
+        }
+    }
+    return unit
+}
+
+## ── keyword map ───────────────────────────────────────────────────────────────
+fn make_keyword_map() -> map<str, i64> {
+    let mut kw: map<str, i64> = map_new()
+    map_insert(kw, "fn",        TK_FN())
+    map_insert(kw, "let",       TK_LET())
+    map_insert(kw, "return",    TK_RETURN())
+    map_insert(kw, "if",        TK_IF())
+    map_insert(kw, "else",      TK_ELSE())
+    map_insert(kw, "match",     TK_MATCH())
+    map_insert(kw, "loop",      TK_LOOP())
+    map_insert(kw, "while",     TK_WHILE())
+    map_insert(kw, "break",     TK_BREAK())
+    map_insert(kw, "continue",  TK_CONTINUE())
+    map_insert(kw, "for",       TK_FOR())
+    map_insert(kw, "in",        TK_IN())
+    map_insert(kw, "struct",    TK_STRUCT())
+    map_insert(kw, "enum",      TK_ENUM())
+    map_insert(kw, "extern",    TK_EXTERN())
+    map_insert(kw, "pure",      TK_PURE())
+    map_insert(kw, "cap",       TK_CAP())
+    map_insert(kw, "must",      TK_MUST())
+    map_insert(kw, "move",      TK_MOVE())
+    map_insert(kw, "some",      TK_SOME())
+    map_insert(kw, "none",      TK_NONE())
+    map_insert(kw, "ok",        TK_OK())
+    map_insert(kw, "err",       TK_ERR())
+    map_insert(kw, "true",      TK_TRUE())
+    map_insert(kw, "false",     TK_FALSE())
+    map_insert(kw, "and",       TK_AND())
+    map_insert(kw, "or",        TK_OR())
+    map_insert(kw, "not",       TK_NOT())
+    map_insert(kw, "forall",    TK_FORALL())
+    map_insert(kw, "exists",    TK_EXISTS())
+    map_insert(kw, "old",       TK_OLD())
+    map_insert(kw, "effects",   TK_EFFECTS())
+    map_insert(kw, "requires",  TK_REQUIRES())
+    map_insert(kw, "ensures",   TK_ENSURES())
+    map_insert(kw, "invariant", TK_INVARIANT())
+    map_insert(kw, "assert",    TK_ASSERT())
+    map_insert(kw, "module",    TK_MODULE())
+    map_insert(kw, "use",       TK_USE())
+    map_insert(kw, "mut",       TK_MUT())
+    map_insert(kw, "secret",    TK_SECRET())
+    map_insert(kw, "reveal",    TK_REVEAL())
+    map_insert(kw, "const",     TK_CONST())
+    map_insert(kw, "impl",      TK_IMPL())
+    map_insert(kw, "as",        TK_AS())
+    map_insert(kw, "trait",     TK_TRAIT())
+    return kw
+}
+
+## ── identifier / keyword scanner ─────────────────────────────────────────────
+fn scan_ident(l: refmut<Lexer>, kw: map<str, i64>) -> Token {
+    let start = l.pos
+    let line  = l.line
+    loop {
+        if lex_at_end(l) { break }
+        if not is_alnum(lex_peek(l)) { break }
+        lex_advance(l)
+    }
+    let lexeme = str_substr(l.src, start, l.pos - start)
+    ## standalone _ is a wildcard token, not an identifier
+    if lexeme == "_" { return make_tok(TK_USCORE(), "_", line) }
+    let kind = map_get(kw, lexeme) must {
+        some(k) => k
+        none    => TK_IDENT()
+    }
+    return make_tok(kind, lexeme, line)
+}
+
+## ── integer / float scanner ───────────────────────────────────────────────────
+##
+## Handles:
+##   decimal:  42  1_000
+##   hex:      0xFF  0XAB
+##   binary:   0b1010  0B1010
+##   octal:    0o77  0O77
+##   float:    3.14  1.0e-3  2E10
+
+fn scan_int_or_float(l: refmut<Lexer>) -> Token {
+    let start = l.pos
+    let line  = l.line
+    let mut is_float: bool = false
+
+    let first = lex_peek(l)
+    lex_advance(l)
+
+    ## detect 0x / 0b / 0o prefixes
+    if first == 48 and not lex_at_end(l) {
+        let next = lex_peek(l)
+        if next == 120 or next == 88 {
+            ## 0x hex
+            lex_advance(l)
+            loop {
+                if lex_at_end(l) { break }
+                let c = lex_peek(l)
+                if not is_hex_digit(c) and c != 95 { break }
+                lex_advance(l)
+            }
+            return make_tok(TK_INT(), str_substr(l.src, start, l.pos - start), line)
+        }
+        if next == 98 or next == 66 {
+            ## 0b binary
+            lex_advance(l)
+            loop {
+                if lex_at_end(l) { break }
+                let c = lex_peek(l)
+                if c != 48 and c != 49 and c != 95 { break }
+                lex_advance(l)
+            }
+            return make_tok(TK_INT(), str_substr(l.src, start, l.pos - start), line)
+        }
+        if next == 111 or next == 79 {
+            ## 0o octal
+            lex_advance(l)
+            loop {
+                if lex_at_end(l) { break }
+                let c = lex_peek(l)
+                if (c < 48 or c > 55) and c != 95 { break }
+                lex_advance(l)
+            }
+            return make_tok(TK_INT(), str_substr(l.src, start, l.pos - start), line)
+        }
+    }
+
+    ## decimal digits (including _ separators)
+    loop {
+        if lex_at_end(l) { break }
+        let c = lex_peek(l)
+        if not is_digit(c) and c != 95 { break }
+        lex_advance(l)
+    }
+
+    ## optional fractional part: .digits
+    if not lex_at_end(l) and lex_peek(l) == 46 and is_digit(lex_peek2(l)) {
+        is_float = true
+        lex_advance(l)  ## consume '.'
+        loop {
+            if lex_at_end(l) { break }
+            let c = lex_peek(l)
+            if not is_digit(c) and c != 95 { break }
+            lex_advance(l)
+        }
+    }
+
+    ## optional exponent: e/E [+/-] digits
+    if not lex_at_end(l) {
+        let ec = lex_peek(l)
+        if ec == 101 or ec == 69 {
+            is_float = true
+            lex_advance(l)  ## consume 'e' or 'E'
+            if not lex_at_end(l) {
+                let sc = lex_peek(l)
+                if sc == 43 or sc == 45 { lex_advance(l) }  ## optional +/-
+            }
+            loop {
+                if lex_at_end(l) { break }
+                if not is_digit(lex_peek(l)) { break }
+                lex_advance(l)
+            }
+        }
+    }
+
+    let lexeme = str_substr(l.src, start, l.pos - start)
+    if is_float {
+        return make_tok(TK_FLOAT(), lexeme, line)
+    }
+    return make_tok(TK_INT(), lexeme, line)
+}
+
+## ── string literal scanner ────────────────────────────────────────────────────
+## Scans "..." including escape sequences; lexeme includes the surrounding quotes.
+fn scan_str(l: refmut<Lexer>) -> Token {
+    let line  = l.line
+    let start = l.pos
+    lex_advance(l)  ## consume opening "
+    loop {
+        if lex_at_end(l) { break }
+        let c = lex_advance(l)
+        if c == 34 { break }        ## closing "
+        if c == 92 {                ## backslash escape
+            if not lex_at_end(l) { lex_advance(l) }
+        }
+    }
+    return make_tok(TK_STR(), str_substr(l.src, start, l.pos - start), line)
+}
+
+## ── directive scanner ─────────────────────────────────────────────────────────
+## Scans #word (e.g. #test, #use, #intent) — # already peeked, not consumed.
+fn scan_directive(l: refmut<Lexer>) -> Token {
+    let line = l.line
+    lex_advance(l)  ## consume '#'
+    let start = l.pos
+    loop {
+        if lex_at_end(l) { break }
+        if not is_alnum(lex_peek(l)) { break }
+        lex_advance(l)
+    }
+    return make_tok(TK_DIRECTIVE(), str_substr(l.src, start, l.pos - start), line)
+}
+
+## ── symbol scanner ────────────────────────────────────────────────────────────
+fn scan_sym(l: refmut<Lexer>) -> Token {
+    let line = l.line
+    let c = lex_advance(l)
+    let n = lex_peek(l)
+
+    ## single-char unambiguous punctuation
+    if c == 40  { return make_tok(TK_LPAREN(),    "(",  line) }
+    if c == 41  { return make_tok(TK_RPAREN(),    ")",  line) }
+    if c == 123 { return make_tok(TK_LBRACE(),    "{",  line) }
+    if c == 125 { return make_tok(TK_RBRACE(),    "}",  line) }
+    if c == 91  { return make_tok(TK_LBRACKET(),  "[",  line) }
+    if c == 93  { return make_tok(TK_RBRACKET(),  "]",  line) }
+    if c == 44  { return make_tok(TK_COMMA(),     ",",  line) }
+    if c == 59  { return make_tok(TK_SEMICOLON(), ";",  line) }
+    if c == 38  { return make_tok(TK_AMP(),       "&",  line) }
+    if c == 64  { return make_tok(TK_AT(),        "@",  line) }
+
+    ## colon or ::
+    if c == 58 {
+        if n == 58 { lex_advance(l)  return make_tok(TK_COLONCOLON(), "::", line) }
+        return make_tok(TK_COLON(), ":", line)
+    }
+
+    ## dot or ..
+    if c == 46 {
+        if n == 46 { lex_advance(l)  return make_tok(TK_DOTDOT(), "..", line) }
+        return make_tok(TK_DOT(), ".", line)
+    }
+
+    ## + or +=
+    if c == 43 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_PLUSEQ(),  "+=", line) }
+        return make_tok(TK_PLUS(), "+", line)
+    }
+
+    ## - or -= or ->
+    if c == 45 {
+        if n == 62 { lex_advance(l)  return make_tok(TK_ARROW(),   "->", line) }
+        if n == 61 { lex_advance(l)  return make_tok(TK_MINUSEQ(), "-=", line) }
+        return make_tok(TK_MINUS(), "-", line)
+    }
+
+    ## * or *=
+    if c == 42 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_STAREQ(),  "*=", line) }
+        return make_tok(TK_STAR(), "*", line)
+    }
+
+    ## / or /=
+    if c == 47 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_SLASHEQ(), "/=", line) }
+        return make_tok(TK_SLASH(), "/", line)
+    }
+
+    ## % or %=
+    if c == 37 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_PERCENTEQ(), "%=", line) }
+        return make_tok(TK_PERCENT(), "%", line)
+    }
+
+    ## = or == or =>
+    if c == 61 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_EQEQ(),    "==", line) }
+        if n == 62 { lex_advance(l)  return make_tok(TK_FATARROW(), "=>", line) }
+        return make_tok(TK_EQ(), "=", line)
+    }
+
+    ## ! or !=
+    if c == 33 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_BANGEQ(), "!=", line) }
+        return make_tok(TK_BANG(), "!", line)
+    }
+
+    ## < or <=
+    if c == 60 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_LTEQ(), "<=", line) }
+        return make_tok(TK_LT(), "<", line)
+    }
+
+    ## > or >=
+    if c == 62 {
+        if n == 61 { lex_advance(l)  return make_tok(TK_GTEQ(), ">=", line) }
+        return make_tok(TK_GT(), ">", line)
+    }
+
+    return make_tok(TK_ERROR(), str_from_u8(c), line)
+}
+
+## ── next token dispatcher ─────────────────────────────────────────────────────
+fn lex_next(l: refmut<Lexer>, kw: map<str, i64>) -> Token {
+    let c = lex_peek(l)
+    if is_alpha(c)  { return scan_ident(l, kw) }
+    if is_digit(c)  { return scan_int_or_float(l) }
+    if c == 34      { return scan_str(l) }
+    if c == 35      { return scan_directive(l) }
+    return scan_sym(l)
+}
+
+## ── public entry point ────────────────────────────────────────────────────────
+##
+##   lex(src)  — tokenise an entire source file.
+##   Returns vec<Token> ending with a TK_EOF sentinel.
+##
+fn lex(src: str) -> vec<Token> {
+    let mut l: Lexer = Lexer{
+        src:     src,
+        src_len: str_len(src),
+        pos:     0,
+        line:    1,
+    }
+    let kw = make_keyword_map()
+    let mut tokens: vec<Token> = vec_new()
+    loop {
+        lex_skip_ws(refmut(l))
+        if lex_at_end(refmut(l)) { break }
+        let tok = lex_next(refmut(l), kw)
+        vec_push(tokens, tok)
+    }
+    vec_push(tokens, make_tok(TK_EOF(), "", l.line))
+    return tokens
+}
+
+## ── token kind → string (for debugging / test output) ────────────────────────
+fn token_kind_name(k: i64) -> str {
+    if k == TK_INT()        { return "INT" }
+    if k == TK_FLOAT()      { return "FLOAT" }
+    if k == TK_STR()        { return "STR" }
+    if k == TK_IDENT()      { return "IDENT" }
+    if k == TK_DIRECTIVE()  { return "DIRECTIVE" }
+    if k == TK_EOF()        { return "EOF" }
+    if k == TK_ERROR()      { return "ERROR" }
+    if k == TK_LPAREN()     { return "LPAREN" }
+    if k == TK_RPAREN()     { return "RPAREN" }
+    if k == TK_LBRACE()     { return "LBRACE" }
+    if k == TK_RBRACE()     { return "RBRACE" }
+    if k == TK_LBRACKET()   { return "LBRACKET" }
+    if k == TK_RBRACKET()   { return "RBRACKET" }
+    if k == TK_COLON()      { return "COLON" }
+    if k == TK_COLONCOLON() { return "COLONCOLON" }
+    if k == TK_COMMA()      { return "COMMA" }
+    if k == TK_DOT()        { return "DOT" }
+    if k == TK_DOTDOT()     { return "DOTDOT" }
+    if k == TK_SEMICOLON()  { return "SEMICOLON" }
+    if k == TK_AMP()        { return "AMP" }
+    if k == TK_AT()         { return "AT" }
+    if k == TK_USCORE()     { return "USCORE" }
+    if k == TK_PLUS()       { return "PLUS" }
+    if k == TK_MINUS()      { return "MINUS" }
+    if k == TK_STAR()       { return "STAR" }
+    if k == TK_SLASH()      { return "SLASH" }
+    if k == TK_PERCENT()    { return "PERCENT" }
+    if k == TK_PLUSEQ()     { return "PLUSEQ" }
+    if k == TK_MINUSEQ()    { return "MINUSEQ" }
+    if k == TK_STAREQ()     { return "STAREQ" }
+    if k == TK_SLASHEQ()    { return "SLASHEQ" }
+    if k == TK_PERCENTEQ()  { return "PERCENTEQ" }
+    if k == TK_EQ()         { return "EQ" }
+    if k == TK_EQEQ()       { return "EQEQ" }
+    if k == TK_BANGEQ()     { return "BANGEQ" }
+    if k == TK_BANG()       { return "BANG" }
+    if k == TK_LT()         { return "LT" }
+    if k == TK_GT()         { return "GT" }
+    if k == TK_LTEQ()       { return "LTEQ" }
+    if k == TK_GTEQ()       { return "GTEQ" }
+    if k == TK_ARROW()      { return "ARROW" }
+    if k == TK_FATARROW()   { return "FATARROW" }
+    if k == TK_FN()         { return "fn" }
+    if k == TK_LET()        { return "let" }
+    if k == TK_RETURN()     { return "return" }
+    if k == TK_IF()         { return "if" }
+    if k == TK_ELSE()       { return "else" }
+    if k == TK_MATCH()      { return "match" }
+    if k == TK_LOOP()       { return "loop" }
+    if k == TK_WHILE()      { return "while" }
+    if k == TK_BREAK()      { return "break" }
+    if k == TK_CONTINUE()   { return "continue" }
+    if k == TK_FOR()        { return "for" }
+    if k == TK_IN()         { return "in" }
+    if k == TK_STRUCT()     { return "struct" }
+    if k == TK_ENUM()       { return "enum" }
+    if k == TK_EXTERN()     { return "extern" }
+    if k == TK_PURE()       { return "pure" }
+    if k == TK_CAP()        { return "cap" }
+    if k == TK_MUST()       { return "must" }
+    if k == TK_MOVE()       { return "move" }
+    if k == TK_SOME()       { return "some" }
+    if k == TK_NONE()       { return "none" }
+    if k == TK_OK()         { return "ok" }
+    if k == TK_ERR()        { return "err" }
+    if k == TK_TRUE()       { return "true" }
+    if k == TK_FALSE()      { return "false" }
+    if k == TK_AND()        { return "and" }
+    if k == TK_OR()         { return "or" }
+    if k == TK_NOT()        { return "not" }
+    if k == TK_FORALL()     { return "forall" }
+    if k == TK_EXISTS()     { return "exists" }
+    if k == TK_OLD()        { return "old" }
+    if k == TK_EFFECTS()    { return "effects" }
+    if k == TK_REQUIRES()   { return "requires" }
+    if k == TK_ENSURES()    { return "ensures" }
+    if k == TK_INVARIANT()  { return "invariant" }
+    if k == TK_ASSERT()     { return "assert" }
+    if k == TK_MODULE()     { return "module" }
+    if k == TK_USE()        { return "use" }
+    if k == TK_MUT()        { return "mut" }
+    if k == TK_SECRET()     { return "secret" }
+    if k == TK_REVEAL()     { return "reveal" }
+    if k == TK_CONST()      { return "const" }
+    if k == TK_IMPL()       { return "impl" }
+    if k == TK_AS()         { return "as" }
+    if k == TK_TRAIT()      { return "trait" }
+    return "UNKNOWN"
+}
+
+## ── standalone driver (optional — compile with --entry=main) ─────────────────
+## Reads source from stdin, prints LINE TAB KIND TAB LEXEME for each token.
+fn main() -> unit {
+    let mut src: str = ""
+    loop {
+        let line = try_read_line() must {
+            some(s) => s
+            none    => break
+        }
+        src = str_concat(src, str_concat(line, str_from_u8(10)))
+    }
+
+    let tokens = lex(src)
+    let n = vec_len(tokens)
+    let mut i: u64 = 0
+    loop {
+        if i >= n { break }
+        let tok = tokens[i]
+        print(str_concat(
+            int_to_str(tok.line),
+            str_concat("\t",
+                str_concat(token_kind_name(tok.kind), str_concat("\t", tok.lexeme)))))
+        i = i + 1
+    }
+    return unit
+}

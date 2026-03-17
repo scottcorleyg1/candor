@@ -2093,3 +2093,35 @@ fn main() -> unit {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+// ── M9 bootstrap sources: lex/parse/typeck only (no CC invocation) ──────────
+
+// checkSource runs lex → parse → typeck on a file from the src/ tree and
+// fails the test if any stage rejects it.
+func checkSource(t *testing.T, path string) {
+	t.Helper()
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	tokens, err := lexer.Tokenize(path, string(src))
+	if err != nil {
+		t.Fatalf("lex %s: %v", path, err)
+	}
+	file, err := parser.Parse(path, tokens)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	_, err = typeck.Check(file)
+	if err != nil {
+		t.Fatalf("typeck %s: %v", path, err)
+	}
+}
+
+func TestM9LexerSource(t *testing.T) {
+	checkSource(t, filepath.Join("..", "..", "src", "compiler", "lexer.cnd"))
+}
+
+func TestM9ParserSource(t *testing.T) {
+	checkSource(t, filepath.Join("..", "..", "src", "compiler", "parser.cnd"))
+}

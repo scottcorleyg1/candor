@@ -30,11 +30,13 @@ Usage:
   candorc build --release                     build with optimizations (-O2); assertions off
   candorc build --backend=llvm                build via LLVM IR text (requires clang)
   candorc build --sanitize=<kind>             enable sanitizer(s): address, undefined, memory, leak, thread
+  candorc build --target=<triple>             cross-compile for a specific target triple
   candorc fmt   [file.cnd ...]                format source files in-place
   candorc test  [file.cnd ...]                run #test-annotated functions
   candorc lsp                                 start the LSP server (stdin/stdout, JSON-RPC 2.0)
 
 Flags may be combined: candorc build --debug --backend=llvm --sanitize=address,undefined
+Target examples: aarch64-unknown-linux-gnu  x86_64-apple-macosx14.0  wasm32-unknown-unknown
 
 A project is identified by a Candor.toml manifest file.`
 
@@ -64,6 +66,7 @@ func main() {
 			Debug:      hasFlag(os.Args[1:], "--debug"),
 			Backend:    "c",
 			Sanitizers: parseSanitizers(os.Args[1:]),
+			Target:     parseTarget(os.Args[1:]),
 		})
 	}
 
@@ -81,6 +84,7 @@ func cmdBuild(args []string) error {
 		Debug:      hasFlag(args, "--debug"),
 		Backend:    "c",
 		Sanitizers: parseSanitizers(args),
+		Target:     parseTarget(args),
 	}
 	for _, a := range args {
 		if a == "--backend=llvm" {
@@ -366,7 +370,7 @@ func runCompileLLVM(srcPaths []string, outPath string, cfg BuildConfig) error {
 	}
 	merged := &parser.File{Name: srcPaths[0], Decls: allDecls}
 
-	llSrc, err := emit_llvm.EmitLLVM(merged, res)
+	llSrc, err := emit_llvm.EmitLLVM(merged, res, cfg.Target)
 	if err != nil {
 		return err
 	}
@@ -538,6 +542,7 @@ type BuildConfig struct {
 	Debug      bool
 	Backend    string   // "c" or "llvm"
 	Sanitizers []string // e.g. ["address", "undefined"]
+	Target     string   // LLVM target triple, e.g. "aarch64-unknown-linux-gnu" (empty = host)
 }
 
 // ccFlags returns the CC/clang flags implied by the config.
@@ -565,7 +570,20 @@ func (cfg BuildConfig) ccFlags() []string {
 			flags = append(flags, "-fsanitize=thread")
 		}
 	}
+	if cfg.Target != "" {
+		flags = append(flags, "--target="+cfg.Target)
+	}
 	return flags
+}
+
+// parseTarget extracts the target triple from a --target=<triple> flag.
+func parseTarget(args []string) string {
+	for _, a := range args {
+		if strings.HasPrefix(a, "--target=") {
+			return strings.TrimPrefix(a, "--target=")
+		}
+	}
+	return ""
 }
 
 // parseSanitizers extracts sanitizer names from --sanitize=a,b,c flags.

@@ -1,0 +1,1116 @@
+## parser.cnd — Candor parser written in Candor  (M9.4 — Phase 1/4)
+##
+## Input:  vec<Token>  (from lexer.cnd's lex())
+## Output: result<ParsedFile, str>
+##
+## Phase 1: token constants, AST type definitions, parser state primitives.
+
+## ── token kind constants (must match lexer.cnd) ───────────────────────────────
+fn TK_INT()        -> i64 pure { return 1  }
+fn TK_FLOAT()      -> i64 pure { return 2  }
+fn TK_STR()        -> i64 pure { return 3  }
+fn TK_IDENT()      -> i64 pure { return 4  }
+fn TK_DIRECTIVE()  -> i64 pure { return 5  }
+fn TK_EOF()        -> i64 pure { return 6  }
+fn TK_ERROR()      -> i64 pure { return 7  }
+fn TK_LPAREN()     -> i64 pure { return 10 }
+fn TK_RPAREN()     -> i64 pure { return 11 }
+fn TK_LBRACE()     -> i64 pure { return 12 }
+fn TK_RBRACE()     -> i64 pure { return 13 }
+fn TK_LBRACKET()   -> i64 pure { return 14 }
+fn TK_RBRACKET()   -> i64 pure { return 15 }
+fn TK_COLON()      -> i64 pure { return 16 }
+fn TK_COLONCOLON() -> i64 pure { return 17 }
+fn TK_COMMA()      -> i64 pure { return 18 }
+fn TK_DOT()        -> i64 pure { return 19 }
+fn TK_DOTDOT()     -> i64 pure { return 20 }
+fn TK_SEMICOLON()  -> i64 pure { return 21 }
+fn TK_AMP()        -> i64 pure { return 22 }
+fn TK_AT()         -> i64 pure { return 23 }
+fn TK_USCORE()     -> i64 pure { return 24 }
+fn TK_PLUS()       -> i64 pure { return 30 }
+fn TK_MINUS()      -> i64 pure { return 31 }
+fn TK_STAR()       -> i64 pure { return 32 }
+fn TK_SLASH()      -> i64 pure { return 33 }
+fn TK_PERCENT()    -> i64 pure { return 34 }
+fn TK_PLUSEQ()     -> i64 pure { return 40 }
+fn TK_MINUSEQ()    -> i64 pure { return 41 }
+fn TK_STAREQ()     -> i64 pure { return 42 }
+fn TK_SLASHEQ()    -> i64 pure { return 43 }
+fn TK_PERCENTEQ()  -> i64 pure { return 44 }
+fn TK_EQ()         -> i64 pure { return 50 }
+fn TK_EQEQ()       -> i64 pure { return 51 }
+fn TK_BANGEQ()     -> i64 pure { return 52 }
+fn TK_BANG()       -> i64 pure { return 53 }
+fn TK_LT()         -> i64 pure { return 54 }
+fn TK_GT()         -> i64 pure { return 55 }
+fn TK_LTEQ()       -> i64 pure { return 56 }
+fn TK_GTEQ()       -> i64 pure { return 57 }
+fn TK_ARROW()      -> i64 pure { return 60 }
+fn TK_FATARROW()   -> i64 pure { return 61 }
+fn TK_FN()         -> i64 pure { return 100 }
+fn TK_LET()        -> i64 pure { return 101 }
+fn TK_RETURN()     -> i64 pure { return 102 }
+fn TK_IF()         -> i64 pure { return 103 }
+fn TK_ELSE()       -> i64 pure { return 104 }
+fn TK_MATCH()      -> i64 pure { return 105 }
+fn TK_LOOP()       -> i64 pure { return 106 }
+fn TK_WHILE()      -> i64 pure { return 107 }
+fn TK_BREAK()      -> i64 pure { return 108 }
+fn TK_CONTINUE()   -> i64 pure { return 109 }
+fn TK_FOR()        -> i64 pure { return 110 }
+fn TK_IN()         -> i64 pure { return 111 }
+fn TK_STRUCT()     -> i64 pure { return 112 }
+fn TK_ENUM()       -> i64 pure { return 113 }
+fn TK_EXTERN()     -> i64 pure { return 114 }
+fn TK_PURE()       -> i64 pure { return 115 }
+fn TK_CAP()        -> i64 pure { return 116 }
+fn TK_MUST()       -> i64 pure { return 117 }
+fn TK_MOVE()       -> i64 pure { return 118 }
+fn TK_SOME()       -> i64 pure { return 119 }
+fn TK_NONE()       -> i64 pure { return 120 }
+fn TK_OK()         -> i64 pure { return 121 }
+fn TK_ERR()        -> i64 pure { return 122 }
+fn TK_TRUE()       -> i64 pure { return 123 }
+fn TK_FALSE()      -> i64 pure { return 124 }
+fn TK_AND()        -> i64 pure { return 125 }
+fn TK_OR()         -> i64 pure { return 126 }
+fn TK_NOT()        -> i64 pure { return 127 }
+fn TK_FORALL()     -> i64 pure { return 128 }
+fn TK_EXISTS()     -> i64 pure { return 129 }
+fn TK_OLD()        -> i64 pure { return 130 }
+fn TK_EFFECTS()    -> i64 pure { return 131 }
+fn TK_REQUIRES()   -> i64 pure { return 132 }
+fn TK_ENSURES()    -> i64 pure { return 133 }
+fn TK_INVARIANT()  -> i64 pure { return 134 }
+fn TK_ASSERT()     -> i64 pure { return 135 }
+fn TK_MODULE()     -> i64 pure { return 136 }
+fn TK_USE()        -> i64 pure { return 137 }
+fn TK_MUT()        -> i64 pure { return 138 }
+fn TK_SECRET()     -> i64 pure { return 139 }
+fn TK_REVEAL()     -> i64 pure { return 140 }
+fn TK_CONST()      -> i64 pure { return 141 }
+fn TK_IMPL()       -> i64 pure { return 142 }
+fn TK_AS()         -> i64 pure { return 143 }
+fn TK_TRAIT()      -> i64 pure { return 144 }
+
+## ── binary / unary operator codes ─────────────────────────────────────────────
+fn OP_ADD()     -> i64 pure { return 1  }
+fn OP_SUB()     -> i64 pure { return 2  }
+fn OP_MUL()     -> i64 pure { return 3  }
+fn OP_DIV()     -> i64 pure { return 4  }
+fn OP_MOD()     -> i64 pure { return 5  }
+fn OP_EQEQ()    -> i64 pure { return 6  }
+fn OP_NEQ()     -> i64 pure { return 7  }
+fn OP_LT()      -> i64 pure { return 8  }
+fn OP_GT()      -> i64 pure { return 9  }
+fn OP_LTEQ()    -> i64 pure { return 10 }
+fn OP_GTEQ()    -> i64 pure { return 11 }
+fn OP_AND()     -> i64 pure { return 12 }
+fn OP_OR()      -> i64 pure { return 13 }
+fn UOP_NEG()    -> i64 pure { return 20 }
+fn UOP_NOT()    -> i64 pure { return 21 }
+fn UOP_ADDR()   -> i64 pure { return 22 }
+
+## ── Token struct (matches lexer.cnd) ─────────────────────────────────────────
+struct Token {
+    kind:   i64
+    lexeme: str
+    line:   i64
+}
+
+## ── TypeExpr ─────────────────────────────────────────────────────────────────
+##
+##   Named("i64")              — bare type name
+##   Generic(box<GenTy>)       — name<T, ...>
+##   Fn(box<FnTy>)             — fn(T) -> R
+##   Tuple(box<TupleTy>)       — (T, U)
+
+struct GenTy   { name: str, args: vec<TypeExpr> }
+struct FnTy    { params: vec<TypeExpr>, ret: box<TypeExpr> }
+struct TupleTy { elems: vec<TypeExpr> }
+
+enum TypeExpr {
+    Named(str),
+    Generic(box<GenTy>),
+    FnType(box<FnTy>),
+    TupleType(box<TupleTy>),
+}
+
+## ── Expression AST ────────────────────────────────────────────────────────────
+
+struct BinExpr  { left: Expr, right: Expr, op: i64, line: i64 }
+struct UnExpr   { operand: Expr, op: i64, line: i64 }
+struct CastExpr { operand: Expr, target: TypeExpr, line: i64 }
+
+struct CallExpr { callee: Expr, args: vec<Expr>, line: i64 }
+struct FieldExpr { receiver: Expr, field: str, line: i64 }
+struct IndexExpr { collection: Expr, index: Expr, line: i64 }
+
+struct StructField { name: str, value: Expr }
+struct StructLitExpr { type_name: str, fields: vec<StructField>, line: i64 }
+
+struct LamParam { name: str, typ: TypeExpr }
+struct LamExpr  { params: vec<LamParam>, ret: TypeExpr, body: vec<Stmt>, line: i64 }
+
+struct MatchArm { pattern: Expr, body: Expr }
+struct MatchExpr { subject: Expr, arms: vec<MatchArm>, line: i64 }
+
+struct MustArm  { pattern: Expr, body: Expr }
+struct MustExpr { subject: Expr, arms: vec<MustArm>, line: i64 }
+
+struct BlkExpr  { stmts: vec<Stmt>, final_expr: option<box<Expr>>, line: i64 }
+
+enum Expr {
+    Int(str),
+    Float(str),
+    Str(str),
+    Bool(bool),
+    Unit,
+    None,
+    Ident(str),
+    Path(str, str),
+    Binary(box<BinExpr>),
+    Unary(box<UnExpr>),
+    Cast(box<CastExpr>),
+    Call(box<CallExpr>),
+    Field(box<FieldExpr>),
+    Index(box<IndexExpr>),
+    StructLit(box<StructLitExpr>),
+    VecLit(vec<Expr>),
+    TupleLit(vec<Expr>),
+    AddrOf(box<Expr>),
+    Lambda(box<LamExpr>),
+    Block(box<BlkExpr>),
+    Match(box<MatchExpr>),
+    Must(box<MustExpr>),
+    Return(box<Expr>),
+    Break,
+    Continue,
+    SomeExpr(box<Expr>),
+    OkExpr(box<Expr>),
+    ErrExpr(box<Expr>),
+    OldExpr(box<Expr>),
+}
+
+## ── Statement AST ────────────────────────────────────────────────────────────
+
+struct LetStmt   { mut_: bool, name: str, typ: option<TypeExpr>, init: Expr, line: i64 }
+struct LetTupStmt { names: vec<str>, init: Expr, line: i64 }
+struct AssignStmt { target: Expr, op: i64, value: Expr, line: i64 }
+struct IfStmt    { cond: Expr, then_: vec<Stmt>, else_: option<box<IfOrBlock>>, line: i64 }
+struct WhileStmt { cond: Expr, body: vec<Stmt>, line: i64 }
+struct ForStmt   { key: str, val: option<str>, iter: Expr, body: vec<Stmt>, line: i64 }
+struct AssertStmt { expr: Expr, line: i64 }
+
+## IfOrBlock: the "else" branch is either another if or a plain block.
+enum IfOrBlock {
+    ElseIf(box<IfStmt>),
+    ElseBlock(vec<Stmt>),
+}
+
+enum Stmt {
+    LetS(box<LetStmt>),
+    LetTupS(box<LetTupStmt>),
+    AssignS(box<AssignStmt>),
+    IfS(box<IfStmt>),
+    WhileS(box<WhileStmt>),
+    LoopS(vec<Stmt>),
+    ForS(box<ForStmt>),
+    BreakS,
+    ContinueS,
+    ReturnS(box<Expr>),
+    AssertS(box<AssertStmt>),
+    ExprS(box<Expr>),
+}
+
+## ── Declaration AST ──────────────────────────────────────────────────────────
+
+struct Param     { name: str, typ: TypeExpr }
+struct FnDecl    { name: str, type_params: vec<str>, params: vec<Param>, ret: TypeExpr,
+                   pure_: bool, body: vec<Stmt>, line: i64 }
+struct StructDecl { name: str, type_params: vec<str>, fields: vec<StructFieldDecl>, line: i64 }
+struct StructFieldDecl { name: str, typ: TypeExpr }
+struct EnumVariant { name: str, payload: option<TypeExpr> }
+struct EnumDecl  { name: str, type_params: vec<str>, variants: vec<EnumVariant>, line: i64 }
+struct ExternDecl { name: str, params: vec<Param>, ret: TypeExpr, line: i64 }
+struct ConstDecl  { name: str, typ: TypeExpr, value: Expr, line: i64 }
+struct TraitMethod { name: str, params: vec<Param>, ret: TypeExpr }
+struct TraitDecl  { name: str, type_params: vec<str>, methods: vec<TraitMethod>, line: i64 }
+struct ImplDecl   { type_name: str, trait_name: option<str>, type_params: vec<str>,
+                    methods: vec<FnDecl>, line: i64 }
+
+enum Decl {
+    FnD(box<FnDecl>),
+    StructD(box<StructDecl>),
+    EnumD(box<EnumDecl>),
+    ExternD(box<ExternDecl>),
+    ConstD(box<ConstDecl>),
+    TraitD(box<TraitDecl>),
+    ImplD(box<ImplDecl>),
+    ModuleD(str),
+    UseD(str),
+}
+
+## ── Parsed file ──────────────────────────────────────────────────────────────
+struct ParsedFile { name: str, decls: vec<Decl> }
+
+## ── Parser state ─────────────────────────────────────────────────────────────
+struct Parser { tokens: vec<Token>, pos: i64 }
+
+fn par_make(tokens: vec<Token>) -> Parser {
+    return Parser{ tokens: tokens, pos: 0 }
+}
+
+fn par_peek(p: ref<Parser>) -> Token {
+    let n = vec_len(p.tokens) as i64
+    if p.pos >= n { return p.tokens[n - 1] }
+    return p.tokens[p.pos]
+}
+
+fn par_peek2(p: ref<Parser>) -> Token {
+    let n = vec_len(p.tokens) as i64
+    if p.pos + 1 >= n { return p.tokens[n - 1] }
+    return p.tokens[p.pos + 1]
+}
+
+fn par_check(p: ref<Parser>, kind: i64) -> bool {
+    return par_peek(p).kind == kind
+}
+
+fn par_check2(p: ref<Parser>, kind: i64) -> bool {
+    return par_peek2(p).kind == kind
+}
+
+fn par_at_end(p: ref<Parser>) -> bool {
+    return par_peek(p).kind == TK_EOF()
+}
+
+fn par_advance(p: refmut<Parser>) -> Token {
+    let t = par_peek(p)
+    if t.kind != TK_EOF() { p.pos = p.pos + 1 }
+    return t
+}
+
+fn par_expect(p: refmut<Parser>, kind: i64, what: str) -> result<Token, str> {
+    let t = par_peek(p)
+    if t.kind == kind {
+        p.pos = p.pos + 1
+        return ok(t)
+    }
+    return err(str_concat(int_to_str(t.line),
+        str_concat(": expected ", str_concat(what,
+        str_concat(", got '", str_concat(t.lexeme, "'"))))))
+}
+
+fn par_match(p: refmut<Parser>, kind: i64) -> bool {
+    if par_check(p, kind) { par_advance(p)  return true }
+    return false
+}
+
+## skip `pure` / `effects(...)` / `requires ...` / `ensures ...` annotations
+fn par_skip_annotations(p: refmut<Parser>) -> unit {
+    loop {
+        let k = par_peek(p).kind
+        if k == TK_PURE() {
+            par_advance(p)
+        } else if k == TK_EFFECTS() {
+            par_advance(p)
+            if par_check(p, TK_LPAREN()) {
+                par_advance(p)
+                let mut depth: i64 = 1
+                loop {
+                    if par_at_end(p) { break }
+                    let c = par_advance(p).kind
+                    if c == TK_LPAREN() { depth = depth + 1 }
+                    if c == TK_RPAREN() {
+                        depth = depth - 1
+                        if depth == 0 { break }
+                    }
+                }
+            }
+        } else if k == TK_REQUIRES() or k == TK_ENSURES() or k == TK_INVARIANT() {
+            ## consume until '{' which starts the body
+            loop {
+                if par_at_end(p) { break }
+                if par_check(p, TK_LBRACE()) { break }
+                par_advance(p)
+            }
+        } else {
+            break
+        }
+    }
+    return unit
+}
+
+## ═══════════════════════════════════════════════════════════════════════════════
+## PHASE 2 — Type expression parser
+## ═══════════════════════════════════════════════════════════════════════════════
+
+fn par_parse_type(p: refmut<Parser>) -> result<TypeExpr, str> {
+    if par_check(p, TK_FN()) {
+        par_advance(p)
+        let _t = par_expect(p, TK_LPAREN(), "lparen") must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        let mut params: vec<TypeExpr> = vec_new()
+        loop {
+            if par_check(p, TK_RPAREN()) { break }
+            if par_check(p, TK_EOF())    { break }
+            let t = par_parse_type(p) must {
+                ok(v) => v   err(e) => return err(e)
+            }
+            vec_push(params, t)
+            if not par_match(p, TK_COMMA()) { break }
+        }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        let _t = par_expect(p, TK_ARROW(), "arrow") must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        let ret = par_parse_type(p) must {
+            ok(v) => v   err(e) => return err(e)
+        }
+        return ok(TypeExpr::FnType(box_new(FnTy{ params: params, ret: box_new(ret) })))
+    }
+    if par_check(p, TK_LPAREN()) {
+        par_advance(p)
+        let mut elems: vec<TypeExpr> = vec_new()
+        loop {
+            if par_check(p, TK_RPAREN()) { break }
+            if par_check(p, TK_EOF())    { break }
+            let t = par_parse_type(p) must {
+                ok(v) => v   err(e) => return err(e)
+            }
+            vec_push(elems, t)
+            if not par_match(p, TK_COMMA()) { break }
+        }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        return ok(TypeExpr::TupleType(box_new(TupleTy{ elems: elems })))
+    }
+    let name_tok = par_peek(p)
+    if name_tok.kind != TK_IDENT() {
+        par_advance(p)
+        return ok(TypeExpr::Named(name_tok.lexeme))
+    }
+    par_advance(p)
+    let name = name_tok.lexeme
+    if par_check(p, TK_LT()) {
+        par_advance(p)
+        let mut args: vec<TypeExpr> = vec_new()
+        loop {
+            if par_check(p, TK_GT())  { break }
+            if par_check(p, TK_EOF()) { break }
+            let a = par_parse_type(p) must {
+                ok(v) => v   err(e) => return err(e)
+            }
+            vec_push(args, a)
+            if not par_match(p, TK_COMMA()) { break }
+        }
+        let _t = par_expect(p, TK_GT(), "gt") must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        return ok(TypeExpr::Generic(box_new(GenTy{ name: name, args: args })))
+    }
+    return ok(TypeExpr::Named(name))
+}
+
+## ═══════════════════════════════════════════════════════════════════════════════
+## PHASE 2 — Expression parser
+## ═══════════════════════════════════════════════════════════════════════════════
+
+fn par_parse_expr(p: refmut<Parser>) -> result<Expr, str> {
+    return par_parse_or(p)
+}
+
+fn par_parse_or(p: refmut<Parser>) -> result<Expr, str> {
+    let mut left = par_parse_and(p) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    loop {
+        if not par_check(p, TK_OR()) { break }
+        let line = par_peek(p).line
+        par_advance(p)
+        let right = par_parse_and(p) must {
+            ok(v) => v   err(e) => return err(e)
+        }
+        left = Expr::Binary(box_new(BinExpr{
+            left: left, right: right, op: OP_OR(), line: line
+        }))
+    }
+    return ok(left)
+}
+
+fn par_parse_and(p: refmut<Parser>) -> result<Expr, str> {
+    let mut left = par_parse_cmp(p) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    loop {
+        if not par_check(p, TK_AND()) { break }
+        let line = par_peek(p).line
+        par_advance(p)
+        let right = par_parse_cmp(p) must {
+            ok(v) => v   err(e) => return err(e)
+        }
+        left = Expr::Binary(box_new(BinExpr{
+            left: left, right: right, op: OP_AND(), line: line
+        }))
+    }
+    return ok(left)
+}
+
+fn par_parse_cmp(p: refmut<Parser>) -> result<Expr, str> {
+    let mut left = par_parse_add(p) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    loop {
+        let k = par_peek(p).kind
+        let line = par_peek(p).line
+        let mut op: i64 = 0
+        if k == TK_EQEQ()   { op = OP_EQEQ() }
+        if k == TK_BANGEQ() { op = OP_NEQ()   }
+        if k == TK_LT()     { op = OP_LT()    }
+        if k == TK_GT()     { op = OP_GT()    }
+        if k == TK_LTEQ()   { op = OP_LTEQ()  }
+        if k == TK_GTEQ()   { op = OP_GTEQ()  }
+        if op == 0 { break }
+        par_advance(p)
+        let right = par_parse_add(p) must {
+            ok(v) => v   err(e) => return err(e)
+        }
+        left = Expr::Binary(box_new(BinExpr{
+            left: left, right: right, op: op, line: line
+        }))
+    }
+    return ok(left)
+}
+
+fn par_parse_add(p: refmut<Parser>) -> result<Expr, str> {
+    let mut left = par_parse_mul(p) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    loop {
+        let k = par_peek(p).kind
+        let line = par_peek(p).line
+        let mut op: i64 = 0
+        if k == TK_PLUS()  { op = OP_ADD() }
+        if k == TK_MINUS() { op = OP_SUB() }
+        if op == 0 { break }
+        par_advance(p)
+        let right = par_parse_mul(p) must {
+            ok(v) => v   err(e) => return err(e)
+        }
+        left = Expr::Binary(box_new(BinExpr{
+            left: left, right: right, op: op, line: line
+        }))
+    }
+    return ok(left)
+}
+
+fn par_parse_mul(p: refmut<Parser>) -> result<Expr, str> {
+    let mut left = par_parse_unary(p) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    loop {
+        let k = par_peek(p).kind
+        let line = par_peek(p).line
+        let mut op: i64 = 0
+        if k == TK_STAR()    { op = OP_MUL() }
+        if k == TK_SLASH()   { op = OP_DIV() }
+        if k == TK_PERCENT() { op = OP_MOD() }
+        if op == 0 { break }
+        par_advance(p)
+        let right = par_parse_unary(p) must {
+            ok(v) => v   err(e) => return err(e)
+        }
+        left = Expr::Binary(box_new(BinExpr{
+            left: left, right: right, op: op, line: line
+        }))
+    }
+    return ok(left)
+}
+
+fn par_parse_unary(p: refmut<Parser>) -> result<Expr, str> {
+    let k = par_peek(p).kind
+    let line = par_peek(p).line
+    if k == TK_NOT() {
+        par_advance(p)
+        let e = par_parse_unary(p) must { ok(v) => v   err(e) => return err(e) }
+        return ok(Expr::Unary(box_new(UnExpr{ operand: e, op: UOP_NOT(), line: line })))
+    }
+    if k == TK_MINUS() {
+        par_advance(p)
+        let e = par_parse_unary(p) must { ok(v) => v   err(e) => return err(e) }
+        return ok(Expr::Unary(box_new(UnExpr{ operand: e, op: UOP_NEG(), line: line })))
+    }
+    if k == TK_AMP() {
+        par_advance(p)
+        let e = par_parse_unary(p) must { ok(v) => v   err(e) => return err(e) }
+        return ok(Expr::AddrOf(box_new(e)))
+    }
+    return par_parse_postfix(p)
+}
+
+fn par_parse_postfix(p: refmut<Parser>) -> result<Expr, str> {
+    let mut e = par_parse_primary(p) must {
+        ok(v) => v   err(e) => return err(e)
+    }
+    loop {
+        let k = par_peek(p).kind
+        let line = par_peek(p).line
+        if k == TK_LPAREN() {
+            par_advance(p)
+            let mut args: vec<Expr> = vec_new()
+            loop {
+                if par_check(p, TK_RPAREN()) { break }
+                if par_check(p, TK_EOF())    { break }
+                let a = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+                vec_push(args, a)
+                if not par_match(p, TK_COMMA()) { break }
+            }
+            let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+            e = Expr::Call(box_new(CallExpr{ callee: e, args: args, line: line }))
+        } else if k == TK_LBRACKET() {
+            par_advance(p)
+            let idx = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+            let _t = par_expect(p, TK_RBRACKET(), "rbracket") must { ok(t) => t   err(e) => return err(e) }
+            e = Expr::Index(box_new(IndexExpr{ collection: e, index: idx, line: line }))
+        } else if k == TK_DOT() {
+            par_advance(p)
+            let fname = par_expect(p, TK_IDENT(), "field name") must {
+                ok(t) => t   err(e) => return err(e)
+            }
+            e = Expr::Field(box_new(FieldExpr{ receiver: e, field: fname.lexeme, line: line }))
+        } else if k == TK_AS() {
+            par_advance(p)
+            let t = par_parse_type(p) must { ok(v) => v   err(e) => return err(e) }
+            e = Expr::Cast(box_new(CastExpr{ operand: e, target: t, line: line }))
+        } else if k == TK_MUST() {
+            par_advance(p)
+            let _t = par_expect(p, TK_LBRACE(), "lbrace") must { ok(t) => t   err(e) => return err(e) }
+            let mut arms: vec<MustArm> = vec_new()
+            loop {
+                if par_check(p, TK_RBRACE()) { break }
+                if par_check(p, TK_EOF())    { break }
+                let pat = par_parse_primary(p) must { ok(v) => v   err(e) => return err(e) }
+                let _t = par_expect(p, TK_FATARROW(), "fatarrow") must { ok(t) => t   err(e) => return err(e) }
+                let body = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+                vec_push(arms, MustArm{ pattern: pat, body: body })
+                par_match(p, TK_COMMA())
+            }
+            let _t = par_expect(p, TK_RBRACE(), "rbrace") must { ok(t) => t   err(e) => return err(e) }
+            e = Expr::Must(box_new(MustExpr{ subject: e, arms: arms, line: line }))
+        } else {
+            break
+        }
+    }
+    return ok(e)
+}
+
+fn par_is_struct_lit(p: ref<Parser>) -> bool {
+    let n = vec_len(p.tokens) as i64
+    if p.pos + 2 >= n { return false }
+    let t1 = p.tokens[p.pos + 1]
+    let t2 = p.tokens[p.pos + 2]
+    return t1.kind == TK_IDENT() and t2.kind == TK_COLON()
+}
+
+fn par_parse_primary(p: refmut<Parser>) -> result<Expr, str> {
+    let t = par_peek(p)
+    let k = t.kind
+    let line = t.line
+    if k == TK_INT()    { par_advance(p)  return ok(Expr::Int(t.lexeme))   }
+    if k == TK_FLOAT()  { par_advance(p)  return ok(Expr::Float(t.lexeme)) }
+    if k == TK_STR()    { par_advance(p)  return ok(Expr::Str(t.lexeme))   }
+    if k == TK_TRUE()   { par_advance(p)  return ok(Expr::Bool(true))      }
+    if k == TK_FALSE()  { par_advance(p)  return ok(Expr::Bool(false))     }
+    if k == TK_NONE()   { par_advance(p)  return ok(Expr::None)            }
+    if k == TK_BREAK()  { par_advance(p)  return ok(Expr::Break)           }
+    if k == TK_CONTINUE(){ par_advance(p) return ok(Expr::Continue)        }
+    if k == TK_USCORE() { par_advance(p)  return ok(Expr::Ident("_"))      }
+    if k == TK_RETURN() {
+        par_advance(p)
+        if par_check(p, TK_RBRACE()) or par_check(p, TK_EOF()) {
+            return ok(Expr::Return(box_new(Expr::Unit)))
+        }
+        let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        return ok(Expr::Return(box_new(e)))
+    }
+    if k == TK_SOME() {
+        par_advance(p)
+        let _t = par_expect(p, TK_LPAREN(), "lparen") must { ok(t) => t   err(e) => return err(e) }
+        let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+        return ok(Expr::SomeExpr(box_new(e)))
+    }
+    if k == TK_OK() {
+        par_advance(p)
+        let _t = par_expect(p, TK_LPAREN(), "lparen") must { ok(t) => t   err(e) => return err(e) }
+        let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+        return ok(Expr::OkExpr(box_new(e)))
+    }
+    if k == TK_ERR() {
+        par_advance(p)
+        let _t = par_expect(p, TK_LPAREN(), "lparen") must { ok(t) => t   err(e) => return err(e) }
+        let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+        return ok(Expr::ErrExpr(box_new(e)))
+    }
+    if k == TK_OLD() {
+        par_advance(p)
+        let _t = par_expect(p, TK_LPAREN(), "lparen") must { ok(t) => t   err(e) => return err(e) }
+        let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+        return ok(Expr::OldExpr(box_new(e)))
+    }
+    if k == TK_FN()    { return par_parse_lambda(p)     }
+    if k == TK_MATCH() { return par_parse_match(p)      }
+    if k == TK_LBRACE(){ return par_parse_block_expr(p) }
+    if k == TK_LPAREN() {
+        par_advance(p)
+        if par_check(p, TK_RPAREN()) { par_advance(p)  return ok(Expr::Unit) }
+        let first = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        if par_check(p, TK_COMMA()) {
+            par_advance(p)
+            let mut elems: vec<Expr> = vec_new()
+            vec_push(elems, first)
+            loop {
+                if par_check(p, TK_RPAREN()) { break }
+                if par_check(p, TK_EOF())    { break }
+                let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+                vec_push(elems, e)
+                if not par_match(p, TK_COMMA()) { break }
+            }
+            let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+            return ok(Expr::TupleLit(elems))
+        }
+        let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+        return ok(first)
+    }
+    if k == TK_LBRACKET() {
+        par_advance(p)
+        let mut elems: vec<Expr> = vec_new()
+        loop {
+            if par_check(p, TK_RBRACKET()) { break }
+            if par_check(p, TK_EOF())      { break }
+            let e = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+            vec_push(elems, e)
+            if not par_match(p, TK_COMMA()) { break }
+        }
+        let _t = par_expect(p, TK_RBRACKET(), "rbracket") must { ok(t) => t   err(e) => return err(e) }
+        return ok(Expr::VecLit(elems))
+    }
+    if k == TK_IDENT() {
+        par_advance(p)
+        let name = t.lexeme
+        if par_check(p, TK_COLONCOLON()) {
+            par_advance(p)
+            let variant = par_expect(p, TK_IDENT(), "variant name") must {
+                ok(v) => v   err(e) => return err(e)
+            }
+            return ok(Expr::Path(name, variant.lexeme))
+        }
+        if par_check(p, TK_LBRACE()) and par_is_struct_lit(p) {
+            par_advance(p)
+            let mut fields: vec<StructField> = vec_new()
+            loop {
+                if par_check(p, TK_RBRACE()) { break }
+                if par_check(p, TK_EOF())    { break }
+                let fname = par_expect(p, TK_IDENT(), "field name") must {
+                    ok(v) => v   err(e) => return err(e)
+                }
+                let _t = par_expect(p, TK_COLON(), "colon") must { ok(t) => t   err(e) => return err(e) }
+                let fval = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+                vec_push(fields, StructField{ name: fname.lexeme, value: fval })
+                if not par_match(p, TK_COMMA()) { break }
+            }
+            let _t = par_expect(p, TK_RBRACE(), "rbrace") must { ok(t) => t   err(e) => return err(e) }
+            return ok(Expr::StructLit(box_new(StructLitExpr{
+                type_name: name, fields: fields, line: line
+            })))
+        }
+        return ok(Expr::Ident(name))
+    }
+    return err(str_concat(int_to_str(line), str_concat(": unexpected token: ", t.lexeme)))
+}
+
+fn par_parse_lambda(p: refmut<Parser>) -> result<Expr, str> {
+    let line = par_peek(p).line
+    par_advance(p)
+    let _t = par_expect(p, TK_LPAREN(), "lparen") must { ok(t) => t   err(e) => return err(e) }
+    let mut params: vec<LamParam> = vec_new()
+    loop {
+        if par_check(p, TK_RPAREN()) { break }
+        if par_check(p, TK_EOF())    { break }
+        let pname = par_expect(p, TK_IDENT(), "param name") must {
+            ok(t) => t   err(e) => return err(e)
+        }
+        let _t = par_expect(p, TK_COLON(), "colon") must { ok(t) => t   err(e) => return err(e) }
+        let ptyp = par_parse_type(p) must { ok(v) => v   err(e) => return err(e) }
+        vec_push(params, LamParam{ name: pname.lexeme, typ: ptyp })
+        if not par_match(p, TK_COMMA()) { break }
+    }
+    let _t = par_expect(p, TK_RPAREN(), "rparen") must { ok(t) => t   err(e) => return err(e) }
+    let _t = par_expect(p, TK_ARROW(), "arrow") must { ok(t) => t   err(e) => return err(e) }
+    let ret = par_parse_type(p) must { ok(v) => v   err(e) => return err(e) }
+    let body = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    return ok(Expr::Lambda(box_new(LamExpr{ params: params, ret: ret, body: body, line: line })))
+}
+
+fn par_parse_match(p: refmut<Parser>) -> result<Expr, str> {
+    let line = par_peek(p).line
+    par_advance(p)
+    let subject = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+    let _t = par_expect(p, TK_LBRACE(), "lbrace") must { ok(t) => t   err(e) => return err(e) }
+    let mut arms: vec<MatchArm> = vec_new()
+    loop {
+        if par_check(p, TK_RBRACE()) { break }
+        if par_check(p, TK_EOF())    { break }
+        let pat = par_parse_primary(p) must { ok(v) => v   err(e) => return err(e) }
+        let _t = par_expect(p, TK_FATARROW(), "fatarrow") must { ok(t) => t   err(e) => return err(e) }
+        let body = par_parse_expr(p) must { ok(v) => v   err(e) => return err(e) }
+        vec_push(arms, MatchArm{ pattern: pat, body: body })
+        par_match(p, TK_COMMA())
+    }
+    let _t = par_expect(p, TK_RBRACE(), "rbrace") must { ok(t) => t   err(e) => return err(e) }
+    return ok(Expr::Match(box_new(MatchExpr{ subject: subject, arms: arms, line: line })))
+}
+
+fn par_parse_block_expr(p: refmut<Parser>) -> result<Expr, str> {
+    let line = par_peek(p).line
+    let stmts = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    return ok(Expr::Block(box_new(BlkExpr{ stmts: stmts, final_expr: none, line: line })))
+}
+
+fn par_parse_block_stmts(p: refmut<Parser>) -> result<vec<Stmt>, str> {
+    let _t = par_expect(p, TK_LBRACE(), "lbrace") must { ok(t) => t   err(e) => return err(e) }
+    let mut stmts: vec<Stmt> = vec_new()
+    loop {
+        if par_check(p, TK_RBRACE()) { break }
+        if par_check(p, TK_EOF())    { break }
+        let s = par_parse_stmt(p) must { ok(v) => v   err(e) => return err(e) }
+        vec_push(stmts, s)
+    }
+    let _t = par_expect(p, TK_RBRACE(), "rbrace") must { ok(t) => t   err(e) => return err(e) }
+    return ok(stmts)
+}
+
+## ── statement parser ─────────────────────────────────────────────────────────
+
+fn par_parse_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let k = par_peek(p).kind
+    if k == TK_LET()      { return par_parse_let(p) }
+    if k == TK_RETURN()   { return par_parse_return(p) }
+    if k == TK_IF()       { return par_parse_if_stmt(p) }
+    if k == TK_LOOP()     { return par_parse_loop_stmt(p) }
+    if k == TK_WHILE()    { return par_parse_while_stmt(p) }
+    if k == TK_FOR()      { return par_parse_for_stmt(p) }
+    if k == TK_ASSERT()   { return par_parse_assert_stmt(p) }
+    if k == TK_BREAK() {
+        let _t = par_advance(p)
+        return ok(Stmt::BreakS)
+    }
+    if k == TK_CONTINUE() {
+        let _t = par_advance(p)
+        return ok(Stmt::ContinueS)
+    }
+    return par_parse_expr_or_assign_stmt(p)
+}
+
+fn par_parse_let(p: refmut<Parser>) -> result<Stmt, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_LET(), "let") must { ok(t) => t   err(e) => return err(e) }
+    let is_mut = par_match(p, TK_MUT())
+    let name_tok = par_expect(p, TK_IDENT(), "identifier") must { ok(t) => t   err(e) => return err(e) }
+    let name = name_tok.lexeme
+    let mut typ: option<TypeExpr> = none
+    if par_match(p, TK_COLON()) {
+        let ty = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+        typ = some(ty)
+    }
+    let _t = par_expect(p, TK_EQ(), "=") must { ok(t) => t   err(e) => return err(e) }
+    let init = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    return ok(Stmt::LetS(box_new(LetStmt{ mut_: is_mut, name: name, typ: typ, init: init, line: line })))
+}
+
+fn par_parse_return(p: refmut<Parser>) -> result<Stmt, str> {
+    let _t = par_expect(p, TK_RETURN(), "return") must { ok(t) => t   err(e) => return err(e) }
+    let k = par_peek(p).kind
+    if k == TK_RBRACE() or k == TK_EOF() {
+        return ok(Stmt::ReturnS(box_new(Expr::Unit)))
+    }
+    let val = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    return ok(Stmt::ReturnS(box_new(val)))
+}
+
+fn par_parse_if_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let line = par_peek(p).line
+    let s = par_parse_if_inner(p) must { ok(s) => s   err(e) => return err(e) }
+    return ok(Stmt::IfS(box_new(s)))
+}
+
+fn par_parse_if_inner(p: refmut<Parser>) -> result<IfStmt, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_IF(), "if") must { ok(t) => t   err(e) => return err(e) }
+    let cond = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    let then_ = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    let mut else_: option<box<IfOrBlock>> = none
+    if par_match(p, TK_ELSE()) {
+        if par_check(p, TK_IF()) {
+            let nested = par_parse_if_inner(p) must { ok(s) => s   err(e) => return err(e) }
+            else_ = some(box_new(IfOrBlock::ElseIf(box_new(nested))))
+        } else {
+            let blk = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+            else_ = some(box_new(IfOrBlock::ElseBlock(blk)))
+        }
+    }
+    return ok(IfStmt{ cond: cond, then_: then_, else_: else_, line: line })
+}
+
+fn par_parse_while_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_WHILE(), "while") must { ok(t) => t   err(e) => return err(e) }
+    let cond = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    let body = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    return ok(Stmt::WhileS(box_new(WhileStmt{ cond: cond, body: body, line: line })))
+}
+
+fn par_parse_loop_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let _t = par_expect(p, TK_LOOP(), "loop") must { ok(t) => t   err(e) => return err(e) }
+    let body = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    return ok(Stmt::LoopS(body))
+}
+
+fn par_parse_for_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_FOR(), "for") must { ok(t) => t   err(e) => return err(e) }
+    let key_tok = par_expect(p, TK_IDENT(), "identifier") must { ok(t) => t   err(e) => return err(e) }
+    let key = key_tok.lexeme
+    let mut val: option<str> = none
+    if par_match(p, TK_COMMA()) {
+        let v_tok = par_expect(p, TK_IDENT(), "identifier") must { ok(t) => t   err(e) => return err(e) }
+        val = some(v_tok.lexeme)
+    }
+    let _t = par_expect(p, TK_IN(), "in") must { ok(t) => t   err(e) => return err(e) }
+    let iter = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    let body = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    return ok(Stmt::ForS(box_new(ForStmt{ key: key, val: val, iter: iter, body: body, line: line })))
+}
+
+fn par_parse_assert_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_ASSERT(), "assert") must { ok(t) => t   err(e) => return err(e) }
+    let expr = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    return ok(Stmt::AssertS(box_new(AssertStmt{ expr: expr, line: line })))
+}
+
+fn par_is_assign_op(k: i64) -> bool {
+    return k == TK_EQ() or k == TK_PLUSEQ() or k == TK_MINUSEQ() or
+           k == TK_STAREQ() or k == TK_SLASHEQ() or k == TK_PERCENTEQ()
+}
+
+fn par_assign_op(k: i64) -> i64 {
+    if k == TK_EQ()       { return 0 }
+    if k == TK_PLUSEQ()   { return OP_ADD() }
+    if k == TK_MINUSEQ()  { return OP_SUB() }
+    if k == TK_STAREQ()   { return OP_MUL() }
+    if k == TK_SLASHEQ()  { return OP_DIV() }
+    if k == TK_PERCENTEQ(){ return OP_MOD() }
+    return 0
+}
+
+fn par_parse_expr_or_assign_stmt(p: refmut<Parser>) -> result<Stmt, str> {
+    let target = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    let k = par_peek(p).kind
+    if par_is_assign_op(k) {
+        let op_tok = par_advance(p)
+        let op = par_assign_op(op_tok.kind)
+        let value = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+        return ok(Stmt::AssignS(box_new(AssignStmt{ target: target, op: op, value: value, line: op_tok.line })))
+    }
+    return ok(Stmt::ExprS(box_new(target)))
+}
+
+
+## ── declaration parser ───────────────────────────────────────────────────────
+
+fn par_parse_fn_params(p: refmut<Parser>) -> result<vec<Param>, str> {
+    let _t = par_expect(p, TK_LPAREN(), "(") must { ok(t) => t   err(e) => return err(e) }
+    let mut params: vec<Param> = vec_new()
+    loop {
+        if par_check(p, TK_RPAREN()) { break }
+        if par_check(p, TK_EOF())    { break }
+        if vec_len(params) as i64 > 0 {
+            let _t = par_expect(p, TK_COMMA(), ",") must { ok(t) => t   err(e) => return err(e) }
+            if par_check(p, TK_RPAREN()) { break }
+        }
+        let name_tok = par_expect(p, TK_IDENT(), "param name") must { ok(t) => t   err(e) => return err(e) }
+        let _t = par_expect(p, TK_COLON(), ":") must { ok(t) => t   err(e) => return err(e) }
+        let ty = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+        vec_push(params, Param{ name: name_tok.lexeme, typ: ty })
+    }
+    let _t = par_expect(p, TK_RPAREN(), ")") must { ok(t) => t   err(e) => return err(e) }
+    return ok(params)
+}
+
+fn par_parse_type_params(p: refmut<Parser>) -> result<vec<str>, str> {
+    let mut tps: vec<str> = vec_new()
+    if not par_check(p, TK_LT()) { return ok(tps) }
+    let _t = par_advance(p)
+    loop {
+        if par_check(p, TK_GT())  { break }
+        if par_check(p, TK_EOF()) { break }
+        if vec_len(tps) as i64 > 0 {
+            let _t = par_expect(p, TK_COMMA(), ",") must { ok(t) => t   err(e) => return err(e) }
+            if par_check(p, TK_GT()) { break }
+        }
+        let tp = par_expect(p, TK_IDENT(), "type param") must { ok(t) => t   err(e) => return err(e) }
+        vec_push(tps, tp.lexeme)
+    }
+    let _t = par_expect(p, TK_GT(), ">") must { ok(t) => t   err(e) => return err(e) }
+    return ok(tps)
+}
+
+fn par_parse_fn_decl(p: refmut<Parser>) -> result<Decl, str> {
+    let line = par_peek(p).line
+    par_skip_annotations(p)
+    let _t = par_expect(p, TK_FN(), "fn") must { ok(t) => t   err(e) => return err(e) }
+    let name_tok = par_expect(p, TK_IDENT(), "fn name") must { ok(t) => t   err(e) => return err(e) }
+    let type_params = par_parse_type_params(p) must { ok(v) => v   err(e) => return err(e) }
+    let params = par_parse_fn_params(p) must { ok(v) => v   err(e) => return err(e) }
+    let _t = par_expect(p, TK_ARROW(), "->") must { ok(t) => t   err(e) => return err(e) }
+    let ret = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+    let is_pure = par_match(p, TK_PURE())
+    let body = par_parse_block_stmts(p) must { ok(v) => v   err(e) => return err(e) }
+    return ok(Decl::FnD(box_new(FnDecl{
+        name: name_tok.lexeme,
+        type_params: type_params,
+        params: params,
+        ret: ret,
+        pure_: is_pure,
+        body: body,
+        line: line
+    })))
+}
+
+fn par_parse_struct_decl(p: refmut<Parser>) -> result<Decl, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_STRUCT(), "struct") must { ok(t) => t   err(e) => return err(e) }
+    let name_tok = par_expect(p, TK_IDENT(), "struct name") must { ok(t) => t   err(e) => return err(e) }
+    let type_params = par_parse_type_params(p) must { ok(v) => v   err(e) => return err(e) }
+    let _t = par_expect(p, TK_LBRACE(), "{") must { ok(t) => t   err(e) => return err(e) }
+    let mut fields: vec<StructFieldDecl> = vec_new()
+    loop {
+        if par_check(p, TK_RBRACE()) { break }
+        if par_check(p, TK_EOF())    { break }
+        let fname = par_expect(p, TK_IDENT(), "field name") must { ok(t) => t   err(e) => return err(e) }
+        let _t = par_expect(p, TK_COLON(), ":") must { ok(t) => t   err(e) => return err(e) }
+        let fty = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+        vec_push(fields, StructFieldDecl{ name: fname.lexeme, typ: fty })
+    }
+    let _t = par_expect(p, TK_RBRACE(), "}") must { ok(t) => t   err(e) => return err(e) }
+    return ok(Decl::StructD(box_new(StructDecl{
+        name: name_tok.lexeme,
+        type_params: type_params,
+        fields: fields,
+        line: line
+    })))
+}
+
+fn par_parse_enum_decl(p: refmut<Parser>) -> result<Decl, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_ENUM(), "enum") must { ok(t) => t   err(e) => return err(e) }
+    let name_tok = par_expect(p, TK_IDENT(), "enum name") must { ok(t) => t   err(e) => return err(e) }
+    let type_params = par_parse_type_params(p) must { ok(v) => v   err(e) => return err(e) }
+    let _t = par_expect(p, TK_LBRACE(), "{") must { ok(t) => t   err(e) => return err(e) }
+    let mut variants: vec<EnumVariant> = vec_new()
+    loop {
+        if par_check(p, TK_RBRACE()) { break }
+        if par_check(p, TK_EOF())    { break }
+        if vec_len(variants) as i64 > 0 {
+            let _t = par_expect(p, TK_COMMA(), ",") must { ok(t) => t   err(e) => return err(e) }
+            if par_check(p, TK_RBRACE()) { break }
+        }
+        let vname = par_expect(p, TK_IDENT(), "variant name") must { ok(t) => t   err(e) => return err(e) }
+        let mut payload: option<TypeExpr> = none
+        if par_match(p, TK_LPAREN()) {
+            let ty = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+            payload = some(ty)
+            let _t = par_expect(p, TK_RPAREN(), ")") must { ok(t) => t   err(e) => return err(e) }
+        }
+        vec_push(variants, EnumVariant{ name: vname.lexeme, payload: payload })
+    }
+    let _t = par_expect(p, TK_RBRACE(), "}") must { ok(t) => t   err(e) => return err(e) }
+    return ok(Decl::EnumD(box_new(EnumDecl{
+        name: name_tok.lexeme,
+        type_params: type_params,
+        variants: variants,
+        line: line
+    })))
+}
+
+fn par_parse_extern_decl(p: refmut<Parser>) -> result<Decl, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_EXTERN(), "extern") must { ok(t) => t   err(e) => return err(e) }
+    let _t = par_expect(p, TK_FN(), "fn") must { ok(t) => t   err(e) => return err(e) }
+    let name_tok = par_expect(p, TK_IDENT(), "extern fn name") must { ok(t) => t   err(e) => return err(e) }
+    let params = par_parse_fn_params(p) must { ok(v) => v   err(e) => return err(e) }
+    let _t = par_expect(p, TK_ARROW(), "->") must { ok(t) => t   err(e) => return err(e) }
+    let ret = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+    return ok(Decl::ExternD(box_new(ExternDecl{
+        name: name_tok.lexeme,
+        params: params,
+        ret: ret,
+        line: line
+    })))
+}
+
+fn par_parse_const_decl(p: refmut<Parser>) -> result<Decl, str> {
+    let line = par_peek(p).line
+    let _t = par_expect(p, TK_CONST(), "const") must { ok(t) => t   err(e) => return err(e) }
+    let name_tok = par_expect(p, TK_IDENT(), "const name") must { ok(t) => t   err(e) => return err(e) }
+    let _t = par_expect(p, TK_COLON(), ":") must { ok(t) => t   err(e) => return err(e) }
+    let ty = par_parse_type(p) must { ok(t) => t   err(e) => return err(e) }
+    let _t = par_expect(p, TK_EQ(), "=") must { ok(t) => t   err(e) => return err(e) }
+    let val = par_parse_expr(p) must { ok(e) => e   err(e) => return err(e) }
+    return ok(Decl::ConstD(box_new(ConstDecl{
+        name: name_tok.lexeme,
+        typ: ty,
+        value: val,
+        line: line
+    })))
+}
+
+fn par_parse_decl(p: refmut<Parser>) -> result<Decl, str> {
+    par_skip_annotations(p)
+    let k = par_peek(p).kind
+    if k == TK_FN()     { return par_parse_fn_decl(p) }
+    if k == TK_STRUCT() { return par_parse_struct_decl(p) }
+    if k == TK_ENUM()   { return par_parse_enum_decl(p) }
+    if k == TK_EXTERN() { return par_parse_extern_decl(p) }
+    if k == TK_CONST()  { return par_parse_const_decl(p) }
+    let tok = par_peek(p)
+    return err(str_concat("unexpected token in decl: ", tok.lexeme))
+}
+
+## ── file parser entry point ──────────────────────────────────────────────────
+
+fn par_parse_file(p: refmut<Parser>, name: str) -> result<ParsedFile, str> {
+    let mut decls: vec<Decl> = vec_new()
+    loop {
+        if par_check(p, TK_EOF()) { break }
+        let d = par_parse_decl(p) must { ok(v) => v   err(e) => return err(e) }
+        vec_push(decls, d)
+    }
+    return ok(ParsedFile{ name: name, decls: decls })
+}
+
+fn parse(tokens: vec<Token>, name: str) -> result<ParsedFile, str> {
+    let mut p = par_make(tokens)
+    return par_parse_file(refmut(p), name)
+}
+

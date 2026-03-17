@@ -1586,3 +1586,57 @@ func TestErrorHintField(t *testing.T) {
 		t.Errorf("expected 'undefined' in error: %v", err)
 	}
 }
+
+func TestBoxNew(t *testing.T) {
+	if _, err := compile(`fn f() -> unit {
+		let b: box<i64> = box_new(42)
+		return unit
+	}`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBoxDeref(t *testing.T) {
+	if _, err := compile(`fn f() -> i64 {
+		let b: box<i64> = box_new(99)
+		return box_deref(b)
+	}`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBoxDrop(t *testing.T) {
+	if _, err := compile(`fn f() -> unit {
+		let b: box<i64> = box_new(1)
+		box_drop(b)
+		return unit
+	}`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBoxNewWrongArgCount(t *testing.T) {
+	mustFail(t, `fn f() -> unit { let b: box<i64> = box_new() return unit }`, "box_new() takes 1 argument")
+}
+
+func TestBoxDerefWrongType(t *testing.T) {
+	mustFail(t, `fn f() -> i64 { return box_deref(42) }`, "box_deref() requires box<T>")
+}
+
+func TestBoxDropWrongType(t *testing.T) {
+	mustFail(t, `fn f() -> unit { box_drop(42) return unit }`, "box_drop() requires box<T>")
+}
+
+func TestBoxInStruct(t *testing.T) {
+	// box<T> field enables recursive-like struct layouts
+	if _, err := compile(`
+struct Node {
+	val: i64,
+	next: option<box<i64>>,
+}
+fn make_node(v: i64) -> Node {
+	return Node { val: v, next: none }
+}`); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1269,7 +1269,7 @@ func (e *emitter) ensureStructEmitted(st *typeck.StructType) error {
 		// Pointers (ref<T>, vec<T>, map<K,V>, option<T>) don't require the inner type
 		// to be fully defined for the struct body. Only inline types do.
 		if gen, ok := fType.(*typeck.GenType); ok {
-			if gen.Con == "ref" || gen.Con == "refmut" || gen.Con == "option" {
+			if gen.Con == "ref" || gen.Con == "refmut" || gen.Con == "option" || gen.Con == "box" {
 				// We don't strictly need it defined here, but we still ensure it.
 			} else if err := e.ensureTypeDependenciesEmitted(gen); err != nil {
 				return err
@@ -2337,6 +2337,24 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 					return nil
 				}
 			}
+			if ident.Tok.Lexeme == "box_new" {
+				t := e.res.ExprTypes[ident]
+				if gen, ok2 := t.(*typeck.GenType); ok2 && gen.Con == "box" && len(gen.Params) == 1 {
+					innerC, err := e.cType(gen.Params[0])
+					if err != nil {
+						return err
+					}
+					// box_new(val) → malloc + store using GCC statement expression
+					fmt.Fprintf(sb, "({ %s* __b = malloc(sizeof(%s)); *__b = ", innerC, innerC)
+					if len(ex.Args) == 1 {
+						if err := e.emitExpr(ex.Args[0], sb); err != nil {
+							return err
+						}
+					}
+					fmt.Fprintf(sb, "; __b; })")
+					return nil
+				}
+			}
 			if handled, err := e.emitBuiltinCall(ident.Tok.Lexeme, ex.Args, sb); handled {
 				return err
 			}
@@ -2991,6 +3009,30 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			return true, err
 		}
 		sb.WriteString(")._len == 0")
+		return true, nil
+
+	case "box_deref":
+		// box_deref(b) → (*b)
+		if len(args) != 1 {
+			return false, nil
+		}
+		sb.WriteString("(*")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte(')')
+		return true, nil
+
+	case "box_drop":
+		// box_drop(b) → free(b)
+		if len(args) != 1 {
+			return false, nil
+		}
+		sb.WriteString("free(")
+		if err := e.emitExpr(args[0], sb); err != nil {
+			return true, err
+		}
+		sb.WriteByte(')')
 		return true, nil
 
 	case "print_char":
@@ -4368,6 +4410,14 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 					return "", err
 				}
 				return inner + "*", nil // null == none
+			}
+		case "box":
+			if len(tt.Params) == 1 {
+				inner, err := e.cType(tt.Params[0])
+				if err != nil {
+					return "", err
+				}
+				return inner + "*", nil // owned heap pointer
 			}
 		case "result":
 			if len(tt.Params) == 2 {

@@ -1385,6 +1385,12 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 				return c.inferRingLen(e, ident, sc)
 			case "ring_is_empty":
 				return c.inferRingIsEmpty(e, ident, sc)
+			case "box_new":
+				return c.inferBoxNew(e, ident, sc, hint)
+			case "box_deref":
+				return c.inferBoxDeref(e, ident, sc)
+			case "box_drop":
+				return c.inferBoxDrop(e, ident, sc)
 			case "refmut":
 				return c.inferRefmutCall(e, sc)
 			}
@@ -2773,6 +2779,59 @@ func (c *checker) inferRingIsEmpty(e *parser.CallExpr, fn *parser.IdentExpr, sc 
 	}
 	c.record(fn, TBool)
 	return TBool, nil
+}
+
+// ── box built-in functions ─────────────────────────────────────────────────
+
+func (c *checker) inferBoxNew(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "box_new() takes 1 argument: the value to heap-allocate")
+	}
+	var innerHint Type
+	if gen, ok := hint.(*GenType); ok && gen.Con == "box" && len(gen.Params) > 0 {
+		innerHint = gen.Params[0]
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, innerHint)
+	if err != nil {
+		return nil, err
+	}
+	t := &GenType{Con: "box", Params: []Type{argType}}
+	c.record(fn, t)
+	return t, nil
+}
+
+func (c *checker) inferBoxDeref(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "box_deref() takes 1 argument: box<T>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := argType.(*GenType)
+	if !ok || gen.Con != "box" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "box_deref() requires box<T>, got %s", argType)
+	}
+	inner := gen.Params[0]
+	c.record(fn, inner)
+	return inner, nil
+}
+
+func (c *checker) inferBoxDrop(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "box_drop() takes 1 argument: box<T>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := argType.(*GenType)
+	if !ok || gen.Con != "box" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "box_drop() requires box<T>, got %s", argType)
+	}
+	_ = gen
+	c.record(fn, TUnit)
+	return TUnit, nil
 }
 
 func (c *checker) inferConstructorCall(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
