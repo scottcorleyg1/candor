@@ -2658,9 +2658,154 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 	case *parser.TupleLitExpr:
 		return e.emitTupleLitExpr(ex, sb)
 
+	case *parser.ForallExpr:
+		return e.emitForallExpr(ex, sb)
+
+	case *parser.ExistsExpr:
+		return e.emitExistsExpr(ex, sb)
+
 	default:
 		return fmt.Errorf("unhandled Expr %T in emit", expr)
 	}
+	return nil
+}
+
+// ── #export_json JSON serialization ────────────────────────────────────────
+
+// emitJsonFunctions emits StructName_to_json and StructName_from_json for
+// structs annotated with #export_json.
+func (e *emitter) emitJsonFunctions(d *parser.StructDecl) error {
+	name := d.Name.Lexeme
+	st := e.res.Structs[name]
+	if st == nil {
+		return nil
+	}
+
+	// fieldTypeName returns the resolved type name for a parser field.
+	fieldTypeName := func(f parser.Field) string {
+		if t, ok := st.Fields[f.Name.Lexeme]; ok {
+			return t.String()
+		}
+		return ""
+	}
+
+	// _to_json
+	e.writeln("")
+	e.writef("static CandorStr %s_to_json(%s s) {\n", name, name)
+	e.writeln("    char _buf[16384]; int _off = 0;")
+	e.writeln("    _off += snprintf(_buf + _off, sizeof(_buf) - _off, \"{\");")
+	for i, f := range d.Fields {
+		fn := f.Name.Lexeme
+		sep := ""
+		if i > 0 {
+			sep = ","
+		}
+		key := sep + "\\\"" + fn + "\\\": "
+		switch fieldTypeName(f) {
+		case "str":
+			e.writef("    _off += snprintf(_buf+_off, sizeof(_buf)-_off, \"%s\\\"%%.*s\\\"\", s.%s._data?(int)s.%s._len:0, s.%s._data?s.%s._data:\"\");\n",
+				key, fn, fn, fn, fn)
+		case "bool":
+			e.writef("    _off += snprintf(_buf+_off, sizeof(_buf)-_off, \"%s%%s\", s.%s?\"true\":\"false\");\n", key, fn)
+		case "f64", "f32", "f16", "bf16":
+			e.writef("    _off += snprintf(_buf+_off, sizeof(_buf)-_off, \"%s%%g\", (double)s.%s);\n", key, fn)
+		default:
+			e.writef("    _off += snprintf(_buf+_off, sizeof(_buf)-_off, \"%s%%lld\", (long long)s.%s);\n", key, fn)
+		}
+	}
+	e.writeln("    _off += snprintf(_buf + _off, sizeof(_buf) - _off, \"}\");")
+	e.writeln("    return cnd_str_from_cstr(_buf);")
+	e.writeln("}")
+
+	// _from_json (simple key:value scanner)
+	e.writeln("")
+	e.writef("static CandorResult %s_from_json(CandorStr _json) {\n", name)
+	e.writef("    %s _out = {0};\n", name)
+	e.writeln("    const char* _p = _json._data ? _json._data : \"\"; const char* _end = _p + _json._len;")
+	e.writeln("    while (_p < _end && *_p != '{') _p++; if (_p >= _end) goto _jerr; _p++;")
+	e.writeln("    while (_p < _end) {")
+	e.writeln("        while (_p<_end && (*_p==' '||*_p==','||*_p=='\\n'||*_p=='\\r')) _p++;")
+	e.writeln("        if (_p >= _end || *_p == '}') break;")
+	e.writeln("        if (*_p != '\"') goto _jerr; _p++;")
+	e.writeln("        const char* _ks = _p; while (_p < _end && *_p != '\"') _p++;")
+	e.writeln("        size_t _klen = (size_t)(_p - _ks); if (_p < _end) _p++;")
+	e.writeln("        while (_p < _end && *_p == ' ') _p++;")
+	e.writeln("        if (_p >= _end || *_p != ':') goto _jerr; _p++;")
+	e.writeln("        while (_p < _end && *_p == ' ') _p++;")
+	for _, f := range d.Fields {
+		fn := f.Name.Lexeme
+		kl := len(fn)
+		e.writef("        if (_klen==%d && memcmp(_ks,\"%s\",%d)==0) {\n", kl, fn, kl)
+		switch fieldTypeName(f) {
+		case "str":
+			e.writef("            if (*_p=='\"') { _p++; const char* _vs=_p; while(_p<_end&&*_p!='\"') _p++; _out.%s=(CandorStr){._data=(char*)_vs,._len=(uint64_t)(_p-_vs),._cap=0}; if(_p<_end)_p++; } continue; }\n", fn)
+		case "bool":
+			e.writef("            _out.%s=(_p<_end&&*_p=='t'); while(_p<_end&&*_p!=','&&*_p!='}') _p++; continue; }\n", fn)
+		case "f64", "f32":
+			e.writef("            _out.%s=strtod(_p,(char**)&_p); continue; }\n", fn)
+		default:
+			e.writef("            _out.%s=strtoll(_p,(char**)&_p,10); continue; }\n", fn)
+		}
+		e.writeln("        while (_p < _end && *_p != ',' && *_p != '}') _p++;")
+	}
+	e.writeln("        while (_p < _end && *_p != ',' && *_p != '}') _p++;")
+	e.writeln("    }")
+	e.writef("    return cnd_ok_%s(_out);\n", name)
+	e.writeln("    _jerr:")
+	e.writef("    { CandorStr _e=cnd_str_lit(\"json parse error\"); return cnd_err_%s(_e); }\n", name)
+	e.writeln("}")
+	return nil
+}
+
+// ── forall / exists quantifier expressions ──────────────────────────────────
+
+func (e *emitter) emitForallExpr(ex *parser.ForallExpr, sb *strings.Builder) error {
+	collType := e.res.ExprTypes[ex.Collection]
+	gen := collType.(*typeck.GenType)
+	elemC, err := e.cType(gen.Params[0])
+	if err != nil { return err }
+	collC, err := e.cType(collType)
+	if err != nil { return err }
+	var collB strings.Builder
+	if err := e.emitExpr(ex.Collection, &collB); err != nil { return err }
+	cTmp := e.freshTmp()
+	iTmp := e.freshTmp()
+	sb.WriteString("({ " + collC + " " + cTmp + " = " + collB.String() + "; bool _all = true; ")
+	if gen.Con == "ring" {
+		sb.WriteString("for (uint64_t " + iTmp + " = 0; " + iTmp + " < " + cTmp + "._len; " + iTmp + "++) { ")
+		sb.WriteString(elemC + " " + ex.Var.Lexeme + " = " + cTmp + "._data[(" + cTmp + "._head + " + iTmp + ") % " + cTmp + "._cap]; ")
+	} else {
+		sb.WriteString("for (uint64_t " + iTmp + " = 0; " + iTmp + " < " + cTmp + "._len; " + iTmp + "++) { ")
+		sb.WriteString(elemC + " " + ex.Var.Lexeme + " = " + cTmp + "._data[" + iTmp + "]; ")
+	}
+	sb.WriteString("if (!(")
+	if err := e.emitExpr(ex.Pred, sb); err != nil { return err }
+	sb.WriteString(")) { _all = false; break; } } _all; })")
+	return nil
+}
+
+func (e *emitter) emitExistsExpr(ex *parser.ExistsExpr, sb *strings.Builder) error {
+	collType := e.res.ExprTypes[ex.Collection]
+	gen := collType.(*typeck.GenType)
+	elemC, err := e.cType(gen.Params[0])
+	if err != nil { return err }
+	collC, err := e.cType(collType)
+	if err != nil { return err }
+	var collB strings.Builder
+	if err := e.emitExpr(ex.Collection, &collB); err != nil { return err }
+	cTmp := e.freshTmp()
+	iTmp := e.freshTmp()
+	sb.WriteString("({ " + collC + " " + cTmp + " = " + collB.String() + "; bool _any = false; ")
+	if gen.Con == "ring" {
+		sb.WriteString("for (uint64_t " + iTmp + " = 0; " + iTmp + " < " + cTmp + "._len; " + iTmp + "++) { ")
+		sb.WriteString(elemC + " " + ex.Var.Lexeme + " = " + cTmp + "._data[(" + cTmp + "._head + " + iTmp + ") % " + cTmp + "._cap]; ")
+	} else {
+		sb.WriteString("for (uint64_t " + iTmp + " = 0; " + iTmp + " < " + cTmp + "._len; " + iTmp + "++) { ")
+		sb.WriteString(elemC + " " + ex.Var.Lexeme + " = " + cTmp + "._data[" + iTmp + "]; ")
+	}
+	sb.WriteString("if (")
+	if err := e.emitExpr(ex.Pred, sb); err != nil { return err }
+	sb.WriteString(") { _any = true; break; } } _any; })")
 	return nil
 }
 

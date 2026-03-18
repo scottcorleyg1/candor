@@ -5,6 +5,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,6 +36,8 @@ Usage:
   candorc fmt   [file.cnd ...]                format source files in-place
   candorc test  [file.cnd ...]                run #test-annotated functions
   candorc lsp                                 start the LSP server (stdin/stdout, JSON-RPC 2.0)
+  candorc mcp   [file.cnd ...]                emit tools.json MCP manifest for #mcp_tool functions
+  candorc doc   [file.cnd ...]                emit intent.json for #intent-annotated functions
 
 Flags may be combined: candorc build --debug --backend=llvm --sanitize=address,undefined
 Target examples: aarch64-unknown-linux-gnu  x86_64-apple-macosx14.0  wasm32 (alias for wasm32-unknown-unknown)
@@ -58,6 +61,10 @@ func main() {
 	case "lsp":
 		srv := lsp.New(os.Stdin, os.Stdout)
 		err = srv.Run()
+	case "mcp":
+		err = cmdMcp(os.Args[2:])
+	case "doc":
+		err = cmdDoc(os.Args[2:])
 	case "help", "--help", "-h":
 		fmt.Println(usage)
 	default:
@@ -305,6 +312,165 @@ func runTestHarness(srcFiles []string, tests []testFn) error {
 	run.Stdout = os.Stdout
 	run.Stderr = os.Stderr
 	return run.Run()
+}
+
+// ── candorc mcp ──────────────────────────────────────────────────────────────
+
+// cmdMcp collects #mcp_tool-annotated functions and emits an MCP tools.json manifest.
+func cmdMcp(args []string) error {
+	targets, err := resolveTargets(args)
+	if err != nil {
+		return err
+	}
+	type prop struct {
+		Type string `json:"type"`
+	}
+	type inputSchema struct {
+		Type       string          `json:"type"`
+		Properties map[string]prop `json:"properties,omitempty"`
+		Required   []string        `json:"required,omitempty"`
+	}
+	type tool struct {
+		Name        string      `json:"name"`
+		Description string      `json:"description"`
+		InputSchema inputSchema `json:"inputSchema"`
+	}
+	type mcpManifest struct {
+		Tools []tool `json:"tools"`
+	}
+	var tools []tool
+	for _, path := range targets {
+		raw, err := os.ReadFile(path)
+		if err != nil { return err }
+		tokens, err := lexer.Tokenize(path, string(raw))
+		if err != nil { return err }
+		file, err := parser.Parse(path, tokens)
+		if err != nil { return err }
+		for _, d := range file.Decls {
+			fn, ok := d.(*parser.FnDecl)
+			if !ok { continue }
+			isMcp := false
+			for _, dir := range fn.Directives {
+				if dir == "mcp_tool" { isMcp = true }
+			}
+			if !isMcp { continue }
+			desc := ""
+			if fn.DirectiveArgs != nil { desc = fn.DirectiveArgs["mcp_tool"] }
+			props := make(map[string]prop)
+			var required []string
+			for _, p := range fn.Params {
+				props[p.Name.Lexeme] = prop{Type: candorTypeToJsonSchema(typeExprStr(p.Type))}
+				required = append(required, p.Name.Lexeme)
+			}
+			tools = append(tools, tool{
+				Name: fn.Name.Lexeme, Description: desc,
+				InputSchema: inputSchema{Type: "object", Properties: props, Required: required},
+			})
+		}
+	}
+	out, err := json.MarshalIndent(mcpManifest{Tools: tools}, "", "  ")
+	if err != nil { return err }
+	outPath := "tools.json"
+	if err := os.WriteFile(outPath, out, 0o644); err != nil { return err }
+	fmt.Printf("mcp: wrote %s (%d tool(s))\n", outPath, len(tools))
+	return nil
+}
+
+func candorTypeToJsonSchema(t string) string {
+	switch t {
+	case "str": return "string"
+	case "bool": return "boolean"
+	case "f64", "f32", "f16", "bf16": return "number"
+	default: return "integer"
+	}
+}
+
+// ── candorc doc ──────────────────────────────────────────────────────────────
+
+// cmdDoc collects #intent-annotated functions and emits an intent.json file.
+func cmdDoc(args []string) error {
+	targets, err := resolveTargets(args)
+	if err != nil { return err }
+	type fnEntry struct {
+		Name      string `json:"name"`
+		Intent    string `json:"intent"`
+		Signature string `json:"signature"`
+	}
+	type docManifest struct {
+		Functions []fnEntry `json:"functions"`
+	}
+	var fns []fnEntry
+	for _, path := range targets {
+		raw, err := os.ReadFile(path)
+		if err != nil { return err }
+		tokens, err := lexer.Tokenize(path, string(raw))
+		if err != nil { return err }
+		file, err := parser.Parse(path, tokens)
+		if err != nil { return err }
+		for _, d := range file.Decls {
+			fn, ok := d.(*parser.FnDecl)
+			if !ok { continue }
+			hasIntent := false
+			for _, dir := range fn.Directives {
+				if dir == "intent" { hasIntent = true }
+			}
+			if !hasIntent { continue }
+			intent := ""
+			if fn.DirectiveArgs != nil { intent = fn.DirectiveArgs["intent"] }
+			fns = append(fns, fnEntry{
+				Name: fn.Name.Lexeme, Intent: intent, Signature: buildFnSig(fn),
+			})
+		}
+	}
+	out, err := json.MarshalIndent(docManifest{Functions: fns}, "", "  ")
+	if err != nil { return err }
+	outPath := "intent.json"
+	if err := os.WriteFile(outPath, out, 0o644); err != nil { return err }
+	fmt.Printf("doc: wrote %s (%d function(s))\n", outPath, len(fns))
+	return nil
+}
+
+// typeExprStr returns a human-readable string for a TypeExpr node.
+func typeExprStr(te parser.TypeExpr) string {
+	if te == nil {
+		return "unit"
+	}
+	switch t := te.(type) {
+	case *parser.NamedType:
+		return t.Name.Lexeme
+	case *parser.GenericType:
+		s := t.Name.Lexeme + "<"
+		for i, p := range t.Params {
+			if i > 0 {
+				s += ", "
+			}
+			s += typeExprStr(p)
+		}
+		return s + ">"
+	case *parser.TupleTypeExpr:
+		s := "("
+		for i, p := range t.Elems {
+			if i > 0 {
+				s += ", "
+			}
+			s += typeExprStr(p)
+		}
+		return s + ")"
+	default:
+		return fmt.Sprintf("%T", te)
+	}
+}
+
+func buildFnSig(fn *parser.FnDecl) string {
+	sig := "fn " + fn.Name.Lexeme + "("
+	for i, p := range fn.Params {
+		if i > 0 {
+			sig += ", "
+		}
+		sig += p.Name.Lexeme + ": " + typeExprStr(p.Type)
+	}
+	sig += ") -> " + typeExprStr(fn.RetType)
+	return sig
 }
 
 // resolveTargets returns the .cnd files to operate on.

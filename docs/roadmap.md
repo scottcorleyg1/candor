@@ -29,6 +29,7 @@ traits, effects, contracts, pattern matching, and a standard library.
 | **M5.3** | Sanitizer integration: `--sanitize=address,undefined,memory,leak,thread` |
 | **M5.1 gaps** | LLVM backend feature-complete: enum payload binding, tuple destructure, `&expr`, `for-in` vec/ring/map, index read/write, vec literals, closures/lambdas (fat pointer), map iteration (linked-list buckets) |
 | **M5.4** | Cross-compilation: `--target=<triple>` flag; passed as `--target=` to clang/CC and emitted as `target triple` in LLVM IR; empty = host default |
+| **M5.5** | WebAssembly target: `--target=wasm32` normalizes to `wasm32-unknown-unknown`; WASM-specific clang flags (`-nostdlib --no-entry --export-all`); `.wasm` output extension; `src/std/wasm.cnd` browser+WASI extern bindings (`wasm_console_log`, `wasm_canvas_fill_rect`, `fd_write`, `proc_exit`); `TestM55WasmStdSource` passes |
 | **M9.1** | `vec::push` and growable collections in LLVM backend: `vec_push` (realloc-based grow), `vec_pop`, `ring_push_back` (linearize-copy grow); `@realloc` declared in IR header; inline IR via `emitBuiltinCall` |
 | **M9.2** | `box<T>` recursive heap types: `box_new` (malloc+store), `box_deref` (load), `box_drop` (free); C backend: `T*`; LLVM backend: `ptr`; `none → option<T>` coercion added |
 | **M9.3** | Candor lexer written in Candor (`src/compiler/lexer.cnd`): all token kinds, keyword map, scanners for ident/int/float/str/directive/sym; `TestM9LexerSource` passes |
@@ -39,6 +40,11 @@ traits, effects, contracts, pattern matching, and a standard library.
 | **M9.5 Ph3** | `typeck.cnd` Phase 3: full expression ADT (`Expr` enum with 15 variants: literals, ident, binary/unary ops, field access, call, struct literal, some/none/ok/err); `infer_expr` with `ok_type`/`err_type` helpers to resolve result<Type,str> unification; mutual recursion via forward-referenced fn signatures; `TestM9TypeckSource` passes |
 | **M9.5 Ph4** | `typeck.cnd` Phase 4: full `Stmt` ADT (11 variants: Let, Ret, If, Loop, While, For, Assign, ExprS, Assert, Break, Continue); `check_stmt` dispatcher; error-accumulating helpers `infer_or_unknown`/`resolve_or_unknown`; type-compat predicate; `check_let/ret/if/loop/while/for/assign/assert`; `TestM9TypeckSource` passes |
 | **M9.5 Ph5** | `typeck.cnd` Phase 5: `typecheck` entry point; two-pass signature collection + `check_bodies`; `define_params_in_scope`; `check_fn_body`; `check_decl_body`; `TypedFile` produced with accumulated errors/warnings; `TestM9TypeckSource` passes |
+| **M6.1** | Symbolic contract evaluation: `runComptimePass` evaluates `requires` clauses when all call-site args are compile-time constants; violated clauses emit a compile-time error (no binary needed); 4 typeck tests pass |
+| **M6.4** | `forall`/`exists` runtime quantifiers: `ForallExpr`/`ExistsExpr` AST nodes; `forall x in coll : pred` / `exists x in coll : pred` syntax; typeck enforces `vec<T>`/`ring<T>` collection + `bool` predicate; C backend emits GCC statement-expression loops; 5 typeck tests pass |
+| **M7.1** | `candorc mcp` subcommand + `#mcp_tool "desc"` directive: emits `tools.json` MCP manifest with name, description, and JSON Schema `inputSchema` derived from Candor parameter types |
+| **M7.2** | `candorc doc` subcommand + `#intent "desc"` directive: emits `intent.json` with function names, intent strings, and signatures — ready for RAG/embedding indexes |
+| **M7.4** | `#export_json` struct directive: generates `StructName_to_json(S) -> CandorStr` and `StructName_from_json(CandorStr) -> result<S,str>` C functions for annotated structs; supports str, bool, integer, and float fields |
 
 ### Known language gaps (not yet wired)
 - Named-return / early-exit in closures

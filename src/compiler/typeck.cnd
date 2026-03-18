@@ -1181,7 +1181,8 @@ fn check_assign(as_: box<AssignStmt>, ss: ref<ScopeStack>, env: refmut<TypeEnv>)
 }
 
 fn check_expr_stmt(es: box<ExprStmt>, ss: ref<ScopeStack>, env: refmut<TypeEnv>) -> unit {
-    let _t = infer_or_unknown(es.expr, ss, env)
+    let e = box_deref(es)
+    let _t = infer_or_unknown(e.expr, ss, env)
     return unit
 }
 
@@ -1231,11 +1232,11 @@ fn define_params_in_scope(params: vec<Param>, ss: refmut<ScopeStack>, env: refmu
 
 fn check_fn_body(f: FnDecl, env: refmut<TypeEnv>) -> unit {
     let mut ss = scope_stack_new()
-    let _idx = scope_push(ss)
-    define_params_in_scope(f.params, ss, env)
+    let _idx = scope_push(refmut(ss))
+    define_params_in_scope(f.params, refmut(ss), env)
     let ret_ty = resolve_or_unknown(f.ret, env)
-    check_stmts(f.body, ss, env, ret_ty)
-    scope_pop(ss)
+    check_stmts(f.body, refmut(ss), env, ret_ty)
+    scope_pop(refmut(ss))
     return unit
 }
 
@@ -1269,7 +1270,7 @@ fn check_bodies(pf: ref<ParsedFile>, env: refmut<TypeEnv>) -> unit {
 ## Returns TypedFile with all accumulated errors and warnings.
 fn typecheck(pf: ref<ParsedFile>) -> TypedFile {
     let mut env = type_env_new()
-    collect_signatures(pf, env)
-    check_bodies(pf, env)
+    collect_signatures(pf, refmut(env))
+    check_bodies(pf, refmut(env))
     return TypedFile{ name: pf.name, errors: env.errors, warnings: env.warnings }
 }

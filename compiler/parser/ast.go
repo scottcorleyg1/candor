@@ -59,7 +59,8 @@ type FnDecl struct {
 	Effects    *EffectsAnnotation // nil = no annotation (unchecked)
 	Contracts  []ContractClause   // requires/ensures; nil or empty = none
 	Body       *BlockStmt
-	Directives []string // directive words immediately preceding this fn, e.g. ["test"]
+	Directives    []string          // directive words immediately preceding this fn, e.g. ["test"]
+	DirectiveArgs map[string]string // optional string argument per directive, e.g. {"mcp_tool": "Search the web"}
 }
 
 func (d *FnDecl) Pos() lexer.Token { return d.FnTok }
@@ -73,9 +74,10 @@ type Param struct {
 
 // StructDecl: struct Name { fields }
 type StructDecl struct {
-	StructTok lexer.Token
-	Name      lexer.Token
-	Fields    []Field
+	StructTok  lexer.Token
+	Name       lexer.Token
+	Fields     []Field
+	Directives []string // directive words immediately preceding this struct, e.g. ["export_json"]
 }
 
 func (d *StructDecl) Pos() lexer.Token { return d.StructTok }
@@ -539,6 +541,32 @@ type OldExpr struct {
 
 func (e *OldExpr) Pos() lexer.Token { return e.OldTok }
 func (e *OldExpr) exprNode()        {}
+
+// ForallExpr: forall x in collection : pred
+// A boolean expression that is true iff pred holds for every element of collection.
+// collection must be vec<T> or ring<T>; x is bound in pred with type T.
+type ForallExpr struct {
+	ForallTok  lexer.Token
+	Var        lexer.Token
+	Collection Expr
+	Pred       Expr
+}
+
+func (e *ForallExpr) Pos() lexer.Token { return e.ForallTok }
+func (e *ForallExpr) exprNode()        {}
+
+// ExistsExpr: exists x in collection : pred
+// A boolean expression that is true iff pred holds for at least one element of collection.
+// collection must be vec<T> or ring<T>; x is bound in pred with type T.
+type ExistsExpr struct {
+	ExistsTok  lexer.Token
+	Var        lexer.Token
+	Collection Expr
+	Pred       Expr
+}
+
+func (e *ExistsExpr) Pos() lexer.Token { return e.ExistsTok }
+func (e *ExistsExpr) exprNode()        {}
 
 // AssertStmt: assert expr  — runtime precondition check inside a function body.
 type AssertStmt struct {

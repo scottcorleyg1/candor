@@ -108,6 +108,12 @@ func walkExprComptime(c *checker, e parser.Expr) {
 		for _, f := range ex.Fields {
 			walkExprComptime(c, f.Value)
 		}
+	case *parser.ForallExpr:
+		walkExprComptime(c, ex.Collection)
+		walkExprComptime(c, ex.Pred)
+	case *parser.ExistsExpr:
+		walkExprComptime(c, ex.Collection)
+		walkExprComptime(c, ex.Pred)
 	}
 }
 
@@ -142,6 +148,26 @@ func tryEvalCall(c *checker, e *parser.CallExpr) {
 		return
 	}
 	c.comptimeVals[e] = result
+
+	// Evaluate requires clauses with the resolved arg values.
+	// A clause that evaluates to false is a compile-time contract violation.
+	for _, cc := range decl.Contracts {
+		if cc.Kind != parser.ContractRequires {
+			continue
+		}
+		val, ok2 := evalExpr(c, cc.Expr, env)
+		if !ok2 {
+			continue // can't evaluate — leave it as a runtime check
+		}
+		b, isBool := val.(bool)
+		if !isBool {
+			continue
+		}
+		if !b {
+			c.comptimeErrs = append(c.comptimeErrs,
+				&Error{Tok: e.LParen, Msg: "requires clause violated at compile time for call to " + name})
+		}
+	}
 }
 
 // evalBlock evaluates a sequence of statements, returning the final value.

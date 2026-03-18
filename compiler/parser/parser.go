@@ -110,14 +110,19 @@ func (p *parser) errorf(t lexer.Token, format string, args ...any) error {
 func (p *parser) parseFile(name string) (*File, error) {
 	file := &File{Name: name}
 	var pendingDirectives []string
+	pendingDirectiveArgs := make(map[string]string)
 	for !p.check(lexer.TokEOF) {
 		// Collect file-scope directives immediately before a declaration.
-		// #test, #use, #intent, etc. — the word after # is a TokDirective.
+		// #test, #mcp_tool "desc", #intent "desc", etc.
 		if p.check(lexer.TokDirective) {
 			word := p.peek().Lexeme
 			p.advance()
-			// Consume any extra tokens on the directive line that aren't a
-			// declaration start, another directive, or EOF.
+			// Capture an optional string argument on the same directive line.
+			if p.check(lexer.TokString) {
+				pendingDirectiveArgs[word] = unquoteStr(p.peek().Lexeme)
+				p.advance()
+			}
+			// Consume any remaining extra tokens on the directive line.
 			for !p.check(lexer.TokEOF) &&
 				!p.check(lexer.TokDirective) &&
 				!p.check(lexer.TokFn) &&
@@ -134,12 +139,22 @@ func (p *parser) parseFile(name string) (*File, error) {
 		if err != nil {
 			return file, err
 		}
-		// Attach collected directives to the function declaration.
+		// Attach collected directives to the declaration.
 		if len(pendingDirectives) > 0 {
-			if fn, ok := decl.(*FnDecl); ok {
-				fn.Directives = append(fn.Directives, pendingDirectives...)
+			switch d := decl.(type) {
+			case *FnDecl:
+				d.Directives = append(d.Directives, pendingDirectives...)
+				if d.DirectiveArgs == nil {
+					d.DirectiveArgs = make(map[string]string)
+				}
+				for k, v := range pendingDirectiveArgs {
+					d.DirectiveArgs[k] = v
+				}
+			case *StructDecl:
+				d.Directives = append(d.Directives, pendingDirectives...)
 			}
 			pendingDirectives = nil
+			pendingDirectiveArgs = make(map[string]string)
 		}
 		file.Decls = append(file.Decls, decl)
 	}
@@ -1263,9 +1278,68 @@ func (p *parser) parsePrimaryExpr() (Expr, error) {
 			return nil, err
 		}
 		return &OldExpr{OldTok: oldTok, X: inner}, nil
+	case lexer.TokForall:
+		return p.parseForallExpr()
+	case lexer.TokExists:
+		return p.parseExistsExpr()
 	default:
 		return nil, p.errorf(t, "expected expression, got %v %q", t.Type, t.Lexeme)
 	}
+}
+
+// parseQuantifierExpr parses: KEYWORD varName in collection : pred
+func (p *parser) parseForallExpr() (*ForallExpr, error) {
+	tok := p.advance() // consume 'forall'
+	varTok, err := p.expect(lexer.TokIdent)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TokIn); err != nil {
+		return nil, err
+	}
+	coll, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TokColon); err != nil {
+		return nil, err
+	}
+	pred, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	return &ForallExpr{ForallTok: tok, Var: varTok, Collection: coll, Pred: pred}, nil
+}
+
+func (p *parser) parseExistsExpr() (*ExistsExpr, error) {
+	tok := p.advance() // consume 'exists'
+	varTok, err := p.expect(lexer.TokIdent)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TokIn); err != nil {
+		return nil, err
+	}
+	coll, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TokColon); err != nil {
+		return nil, err
+	}
+	pred, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	return &ExistsExpr{ExistsTok: tok, Var: varTok, Collection: coll, Pred: pred}, nil
+}
+
+// unquoteStr strips outer quotes from a directive string argument.
+func unquoteStr(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
 }
 
 func (p *parser) parseLambdaExpr() (*LambdaExpr, error) {

@@ -136,6 +136,9 @@ func Check(file *parser.File) (*Result, error) {
 		return nil, err
 	}
 	runComptimePass(c, []*parser.File{file})
+	if len(c.comptimeErrs) > 0 {
+		return nil, multiError(c.comptimeErrs)
+	}
 	return &Result{
 		ExprTypes:        c.exprTypes,
 		FnSigs:           c.fnSigs,
@@ -185,6 +188,9 @@ func CheckProgram(files []*parser.File) (*Result, error) {
 		return nil, err
 	}
 	runComptimePass(c, files)
+	if len(c.comptimeErrs) > 0 {
+		return nil, multiError(c.comptimeErrs)
+	}
 	return &Result{
 		ExprTypes:        c.exprTypes,
 		FnSigs:           c.fnSigs,
@@ -418,7 +424,8 @@ type checker struct {
 	fnEffects    map[string]*parser.EffectsAnnotation // collected effects annotations
 	fnDecls      map[string]*parser.FnDecl             // function bodies for comptime eval
 	externFns    map[string]bool                       // extern fn names
-	comptimeVals map[parser.Expr]interface{}           // comptime-evaluated call results
+	comptimeVals  map[parser.Expr]interface{}           // comptime-evaluated call results
+	comptimeErrs  []error                               // compile-time contract violations
 	curEffects   *parser.EffectsAnnotation             // effects of fn currently being checked
 	errs         []error                               // collected statement-level errors
 	warnings     []Warning                             // collected non-fatal diagnostics
@@ -1503,6 +1510,12 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 
 	case *parser.TupleLitExpr:
 		return c.inferTupleLitExpr(e, sc, hint)
+
+	case *parser.ForallExpr:
+		return c.inferQuantifierExpr(e.Var, e.Collection, e.Pred, sc)
+
+	case *parser.ExistsExpr:
+		return c.inferQuantifierExpr(e.Var, e.Collection, e.Pred, sc)
 
 	default:
 		return nil, fmt.Errorf("unhandled Expr %T", expr)
@@ -2596,6 +2609,31 @@ func walkIdentsInExpr(e parser.Expr, fn func(string)) {
 	case *parser.BreakExpr:
 		// no exprs
 	}
+}
+
+// inferQuantifierExpr handles forall/exists boolean quantifiers over collections.
+// The bound variable is scoped only within the predicate expression.
+func (c *checker) inferQuantifierExpr(varTok lexer.Token, collection parser.Expr, pred parser.Expr, sc *scope) (Type, error) {
+	collType, err := c.checkExpr(collection, sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := collType.(*GenType)
+	if !ok || (gen.Con != "vec" && gen.Con != "ring") {
+		return nil, c.errorf(varTok, "forall/exists requires vec<T> or ring<T>, got %s", collType)
+	}
+	elemType := gen.Params[0]
+	// Evaluate predicate in a child scope with the bound variable.
+	child := newScope(sc)
+	child.define(varTok.Lexeme, elemType)
+	predType, err := c.checkExpr(pred, child, TBool)
+	if err != nil {
+		return nil, err
+	}
+	if !predType.Equals(TBool) {
+		return nil, c.errorf(varTok, "forall/exists predicate must be bool, got %s", predType)
+	}
+	return TBool, nil
 }
 
 func (c *checker) inferOldExpr(e *parser.OldExpr, sc *scope) (Type, error) {

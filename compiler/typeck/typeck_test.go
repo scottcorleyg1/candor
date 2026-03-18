@@ -1826,3 +1826,97 @@ func TestEffectsUnknownNameWarns(t *testing.T) {
 		t.Fatal("expected 'unknown effect' warning for unrecognized effect name")
 	}
 }
+
+// ── M6.1: Symbolic contract evaluation ───────────────────────────────────────
+
+func TestComptimeContractPass(t *testing.T) {
+	// requires clause satisfied at compile time → no error
+	_, err := compile(`
+fn clamp(x: i64) -> i64 pure requires x >= 0 { return x }
+fn main() -> unit { let v = clamp(5) return unit }`)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestComptimeContractViolation(t *testing.T) {
+	// requires clause violated at compile time → compile error
+	_, err := compile(`
+fn clamp(x: i64) -> i64 pure requires x >= 0 { return x }
+fn main() -> unit { let v = clamp(-1) return unit }`)
+	if err == nil {
+		t.Fatal("expected compile-time contract violation error")
+	}
+	if !strings.Contains(err.Error(), "requires clause violated") {
+		t.Fatalf("expected 'requires clause violated' in error, got: %v", err)
+	}
+}
+
+func TestComptimeContractMultiple(t *testing.T) {
+	// two requires clauses, both satisfied
+	_, err := compile(`
+fn bounded(x: i64, n: i64) -> i64 pure requires x >= 0 requires n > 0 { return x }
+fn main() -> unit { let v = bounded(3, 5) return unit }`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestComptimeContractViolatesSecond(t *testing.T) {
+	// second requires clause violated
+	_, err := compile(`
+fn bounded(x: i64, n: i64) -> i64 pure requires x >= 0 requires n > 0 { return x }
+fn main() -> unit { let v = bounded(3, 0) return unit }`)
+	if err == nil {
+		t.Fatal("expected compile-time contract violation error")
+	}
+}
+
+// ── M6.4: forall / exists ─────────────────────────────────────────────────────
+
+func TestForallVec(t *testing.T) {
+	_, err := compile(`
+fn all_positive(v: vec<i64>) -> bool {
+    return forall x in v : x > 0
+}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExistsVec(t *testing.T) {
+	_, err := compile(`
+fn has_zero(v: vec<i64>) -> bool {
+    return exists x in v : x == 0
+}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestForallInRequires(t *testing.T) {
+	// forall used inside a requires clause
+	_, err := compile(`
+fn sum_positive(v: vec<i64>) -> i64 requires forall x in v : x >= 0 {
+    return 0
+}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestForallWrongCollectionType(t *testing.T) {
+	_, err := compile(`
+fn bad(x: i64) -> bool { return forall y in x : y > 0 }`)
+	if err == nil {
+		t.Fatal("expected error: forall on non-collection type")
+	}
+}
+
+func TestExistsNonBoolPred(t *testing.T) {
+	_, err := compile(`
+fn bad(v: vec<i64>) -> bool { return exists x in v : x + 1 }`)
+	if err == nil {
+		t.Fatal("expected error: non-bool predicate")
+	}
+}
