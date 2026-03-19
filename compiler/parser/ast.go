@@ -514,6 +514,18 @@ type LambdaExpr struct {
 func (e *LambdaExpr) Pos() lexer.Token { return e.FnTok }
 func (e *LambdaExpr) exprNode()        {}
 
+// SpawnExpr: spawn { stmts }
+// Creates a task<T> that runs stmts concurrently in a new thread.
+// The block must contain a `return expr` to produce the value T.
+// Captured outer variables are copied into the task context.
+type SpawnExpr struct {
+	SpawnTok lexer.Token
+	Body     *BlockStmt
+}
+
+func (e *SpawnExpr) Pos() lexer.Token { return e.SpawnTok }
+func (e *SpawnExpr) exprNode()        {}
+
 // CastExpr: expr as Type — explicit numeric cast.
 type CastExpr struct {
 	X      Expr

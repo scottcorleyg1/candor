@@ -64,6 +64,7 @@ const (
 	TokImpl
 	TokAs
 	TokTrait
+	TokSpawn
 
 	// --- Punctuation & Operators ---
 	TokLParen    // (
@@ -164,6 +165,7 @@ var keywords = map[string]TokenType{
 	"impl":  TokImpl,
 	"as":    TokAs,
 	"trait": TokTrait,
+	"spawn": TokSpawn,
 }
 
 // Token is a single lexical unit from a .cnd source file.
@@ -230,6 +232,7 @@ var tokenNames = map[TokenType]string{
 	TokImpl:  "impl",
 	TokAs:    "as",
 	TokTrait: "trait",
+	TokSpawn: "spawn",
 	TokLParen:    "(",
 	TokRParen:    ")",
 	TokLBrace:    "{",

@@ -54,6 +54,11 @@ type emitter struct {
 	// byRefCaptures holds variable names that are captured by reference in the
 	// lambda currently being emitted. Reads emit (*name), writes emit (*name) = val.
 	byRefCaptures map[string]bool
+
+	// spawnTaskVar is non-empty when emitting a spawn thunk body.
+	// It holds the C variable name of the _CndTask_T* pointer so that
+	// return statements can store their value into _task->_result.
+	spawnTaskVar string
 }
 
 func (e *emitter) freshTmp() string {
@@ -86,6 +91,9 @@ func (e *emitter) emitFile(file *parser.File) error {
 	e.writeln("#  include <sys/stat.h>")
 	e.writeln("#  define _cnd_mkdir(p) mkdir(p, 0755)")
 	e.writeln("#endif")
+	if len(e.res.Spawns) > 0 {
+		e.writeln("#include <pthread.h>")
+	}
 	e.writeln("")
 	e.emitRuntimeHelpers()
 	e.writeln("")
@@ -232,6 +240,13 @@ func (e *emitter) emitFile(file *parser.File) error {
 	// Emit lambda helper functions (before named functions so forward refs work).
 	for _, lam := range e.res.Lambdas {
 		if err := e.emitLambdaFn(lam); err != nil {
+			return err
+		}
+	}
+
+	// Emit spawn task structs and thunk functions.
+	for _, sp := range e.res.Spawns {
+		if err := e.emitSpawnThunk(sp); err != nil {
 			return err
 		}
 	}
@@ -401,6 +416,109 @@ func (e *emitter) emitLambdaFn(lam *typeck.LambdaInfo) error {
 		e.writef("    return (%s){ ._fn = %s, ._env = _e };\n", fnTypN, implName)
 		e.writef("}\n")
 	}
+	return nil
+}
+
+// taskTypeName returns the C struct name for a task<T> given the inner type T.
+func (e *emitter) taskTypeName(T typeck.Type) (string, error) {
+	tC, err := e.cType(T)
+	if err != nil {
+		return "", err
+	}
+	return "_CndTask_" + e.mangle(tC), nil
+}
+
+// ensureTaskTypeEmitted emits the task struct definition (typedef + body) once.
+func (e *emitter) ensureTaskTypeEmitted(T typeck.Type, name string) error {
+	if e.emittedTypes[name] {
+		return nil
+	}
+	e.emittedTypes[name] = true
+	tC, err := e.cType(T)
+	if err != nil {
+		return err
+	}
+	e.writef("typedef struct %s %s;\n", name, name)
+	e.writef("struct %s {\n", name)
+	e.writef("    pthread_t _thread;\n")
+	if tC != "void" {
+		e.writef("    %s _result;\n", tC)
+	}
+	e.writef("    int _ok;\n")
+	e.writef("    const char* _err;\n")
+	e.writef("};\n")
+	return nil
+}
+
+// emitSpawnThunk emits the context struct and thunk function for one SpawnInfo.
+func (e *emitter) emitSpawnThunk(sp *typeck.SpawnInfo) error {
+	T := sp.ResultType
+	taskTyp, err := e.taskTypeName(T)
+	if err != nil {
+		return err
+	}
+	// Ensure task struct is defined.
+	if err := e.ensureTaskTypeEmitted(T, taskTyp); err != nil {
+		return err
+	}
+
+	ctxType := sp.Name + "_ctx"
+	fnName := sp.Name + "_fn"
+
+	// Emit context struct.
+	e.writef("typedef struct {\n")
+	e.writef("    %s* _task;\n", taskTyp)
+	for i, cap := range sp.Captures {
+		capC, err := e.cType(sp.CaptureTypes[i])
+		if err != nil {
+			return err
+		}
+		e.writef("    %s %s;\n", capC, cap)
+	}
+	e.writef("} %s;\n", ctxType)
+
+	// Emit thunk function.
+	e.writef("static void* %s(void* _raw) {\n", fnName)
+	e.writef("    %s* _ctx = (%s*)_raw;\n", ctxType, ctxType)
+	e.writef("    %s* _task = _ctx->_task;\n", taskTyp)
+	for _, cap := range sp.Captures {
+		e.writef("    __auto_type %s = _ctx->%s;\n", cap, cap)
+	}
+	e.writef("    free(_ctx);\n")
+
+	// Save/restore emitter context.
+	prevSpawn := e.spawnTaskVar
+	prevRetIsUnit := e.retIsUnit
+	prevIsMain := e.isMain
+	prevContracts := e.contracts
+	prevRetType := e.retType
+	e.spawnTaskVar = "_task"
+	e.retIsUnit = T.Equals(typeck.TUnit)
+	e.isMain = false
+	e.contracts = nil
+	e.retType = T
+
+	if err := e.emitBlock(sp.Node.Body, 1); err != nil {
+		e.spawnTaskVar = prevSpawn
+		e.retIsUnit = prevRetIsUnit
+		e.isMain = prevIsMain
+		e.contracts = prevContracts
+		e.retType = prevRetType
+		return err
+	}
+
+	e.spawnTaskVar = prevSpawn
+	e.retIsUnit = prevRetIsUnit
+	e.isMain = prevIsMain
+	e.contracts = prevContracts
+	e.retType = prevRetType
+
+	// Default fall-through: unit tasks or bodies without explicit return.
+	if T.Equals(typeck.TUnit) {
+		e.writef("    _task->_ok = 1;\n")
+	}
+	e.writef("    return NULL;\n")
+	e.writef("}\n")
 	return nil
 }
 
@@ -1680,6 +1798,23 @@ func (e *emitter) emitStmt(stmt parser.Stmt, depth int) error {
 		return e.emitLetStmt(s, depth)
 
 	case *parser.ReturnStmt:
+		// Spawn thunk mode: store result in task struct instead of returning.
+		if e.spawnTaskVar != "" {
+			taskVar := e.spawnTaskVar
+			if s.Value == nil || isUnitValue(s.Value) {
+				e.writef("%s%s->_ok = 1;\n", ind, taskVar)
+				e.writef("%sreturn NULL;\n", ind)
+			} else {
+				e.writef("%s%s->_result = ", ind, taskVar)
+				if err := e.emitExpr(s.Value, &e.sb); err != nil {
+					return err
+				}
+				e.write(";\n")
+				e.writef("%s%s->_ok = 1;\n", ind, taskVar)
+				e.writef("%sreturn NULL;\n", ind)
+			}
+			return nil
+		}
 		if s.Value == nil {
 			// bare return in a unit function
 			if e.isMain {
@@ -2249,6 +2384,43 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 			emitComptimeConst(v, sb)
 			return nil
 		}
+		// task<T>.join() — blocks until the thread finishes, returns result<T, str>.
+		if T, ok := e.res.TaskJoins[ex]; ok {
+			fe := ex.Fn.(*parser.FieldExpr)
+			taskTyp, err := e.taskTypeName(T)
+			if err != nil {
+				return err
+			}
+			resultGen := &typeck.GenType{Con: "result", Params: []typeck.Type{T, typeck.TStr}}
+			if err := e.ensureTypeDependenciesEmitted(resultGen); err != nil {
+				return err
+			}
+			resTyp, err := e.resultTypeName(resultGen)
+			if err != nil {
+				return err
+			}
+			tC, err := e.cType(T)
+			if err != nil {
+				return err
+			}
+			var recvSB strings.Builder
+			if err := e.emitExpr(fe.Receiver, &recvSB); err != nil {
+				return err
+			}
+			sb.WriteString("(__extension__ ({\n")
+			sb.WriteString(fmt.Sprintf("    %s* _jt = %s;\n", taskTyp, recvSB.String()))
+			sb.WriteString("    pthread_join(_jt->_thread, NULL);\n")
+			sb.WriteString(fmt.Sprintf("    %s _jr = {0};\n", resTyp))
+			if tC == "void" {
+				sb.WriteString("    if (_jt->_ok) { _jr._ok = 1; } else { _jr._ok = 0; _jr._err_val = _jt->_err; }\n")
+			} else {
+				sb.WriteString("    if (_jt->_ok) { _jr._ok = 1; _jr._ok_val = _jt->_result; } else { _jr._ok = 0; _jr._err_val = _jt->_err; }\n")
+			}
+			sb.WriteString("    free(_jt);\n")
+			sb.WriteString("    _jr;\n")
+			sb.WriteString("}))")
+			return nil
+		}
 		// Method call: registered by typeck as StructName_method(receiver, args...)
 		if mangledName, ok := e.res.MethodCalls[ex]; ok {
 			sb.WriteString(mangledName)
@@ -2635,6 +2807,37 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 			return nil
 		}
 		return fmt.Errorf("lambda not found in result")
+
+	case *parser.SpawnExpr:
+		// spawn { body } — heap-allocate task struct, start pthread, return task pointer.
+		var sp *typeck.SpawnInfo
+		for _, s := range e.res.Spawns {
+			if s.Node == ex {
+				sp = s
+				break
+			}
+		}
+		if sp == nil {
+			return fmt.Errorf("no SpawnInfo for spawn expression")
+		}
+		taskTyp, err := e.taskTypeName(sp.ResultType)
+		if err != nil {
+			return err
+		}
+		fnName := sp.Name + "_fn"
+		ctxType := sp.Name + "_ctx"
+		sb.WriteString("(__extension__ ({\n")
+		sb.WriteString(fmt.Sprintf("    %s* _t = (%s*)malloc(sizeof(%s));\n", taskTyp, taskTyp, taskTyp))
+		sb.WriteString("    _t->_ok = 0;\n")
+		sb.WriteString(fmt.Sprintf("    %s* _ctx = (%s*)malloc(sizeof(%s));\n", ctxType, ctxType, ctxType))
+		sb.WriteString("    _ctx->_task = _t;\n")
+		for _, cap := range sp.Captures {
+			sb.WriteString(fmt.Sprintf("    _ctx->%s = %s;\n", cap, cap))
+		}
+		sb.WriteString(fmt.Sprintf("    pthread_create(&_t->_thread, NULL, %s, _ctx);\n", fnName))
+		sb.WriteString("    _t;\n")
+		sb.WriteString("}))")
+		return nil
 
 	case *parser.OldExpr:
 		// old(expr) emits the pre-captured variable name.
@@ -4656,6 +4859,15 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 				if ct, ok := tt.Params[0].(*typeck.CapabilityType); ok {
 					return "cap_" + ct.Name, nil
 				}
+			}
+		case "task":
+			// task<T> is a heap-allocated thread handle; emitted as _CndTask_T*.
+			if len(tt.Params) == 1 {
+				name, err := e.taskTypeName(tt.Params[0])
+				if err != nil {
+					return "", err
+				}
+				return name + "*", nil
 			}
 		}
 		return "", fmt.Errorf("unsupported generic type: %s", t)

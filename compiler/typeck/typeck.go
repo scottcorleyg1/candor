@@ -67,6 +67,16 @@ type LambdaInfo struct {
 	CaptureByRef []bool   // parallel to Captures: true if captured by pointer (outer var is mut)
 }
 
+// SpawnInfo holds type and metadata for a spawn expression.
+type SpawnInfo struct {
+	Node         *parser.SpawnExpr
+	Name         string // generated C name, e.g. _cnd_spawn_1
+	ResultType   Type   // T in task<T>
+	Captures     []string
+	CaptureTypes []Type
+	CaptureByRef []bool
+}
+
 // Result is the output of a successful type-check pass.
 type Result struct {
 	// ExprTypes maps each Expr node to its resolved Type.
@@ -109,6 +119,10 @@ type Result struct {
 	Warnings []Warning
 	// CapabilityDecls holds all `cap Name` declarations for the C emitter.
 	CapabilityDecls []*parser.CapabilityDecl
+	// Spawns holds all spawn expressions in declaration order.
+	Spawns []*SpawnInfo
+	// TaskJoins maps a CallExpr (task.join()) to the inner type T of task<T>.
+	TaskJoins map[parser.Expr]Type
 }
 
 // Check type-checks a fully parsed File and returns a Result.
@@ -133,6 +147,7 @@ func Check(file *parser.File) (*Result, error) {
 		traits:          make(map[string]*TraitDef),
 		traitImpls:      make(map[string]map[string]bool),
 		capabilities:    make(map[string]bool),
+		taskJoins:       make(map[parser.Expr]Type),
 		// symModule intentionally nil — disables module enforcement
 	}
 	if err := c.checkFile(file); err != nil {
@@ -161,6 +176,8 @@ func Check(file *parser.File) (*Result, error) {
 		ConstDecls:       c.constDecls,
 		Warnings:         c.warnings,
 		CapabilityDecls:  c.capDecls,
+		Spawns:           c.spawns,
+		TaskJoins:        c.taskJoins,
 	}, nil
 }
 
@@ -187,6 +204,7 @@ func CheckProgram(files []*parser.File) (*Result, error) {
 		traits:          make(map[string]*TraitDef),
 		traitImpls:      make(map[string]map[string]bool),
 		capabilities:    make(map[string]bool),
+		taskJoins:       make(map[parser.Expr]Type),
 		symModule:       make(map[string]string), // non-nil enables enforcement
 	}
 	if err := c.checkProgram(files); err != nil {
@@ -215,6 +233,8 @@ func CheckProgram(files []*parser.File) (*Result, error) {
 		ConstDecls:       c.constDecls,
 		Warnings:         c.warnings,
 		CapabilityDecls:  c.capDecls,
+		Spawns:           c.spawns,
+		TaskJoins:        c.taskJoins,
 	}, nil
 }
 
@@ -455,6 +475,11 @@ type checker struct {
 	// Lambda tracking
 	lambdas     []*LambdaInfo
 	lambdaCount int
+
+	// Spawn / task tracking
+	spawns     []*SpawnInfo
+	spawnCount int
+	taskJoins  map[parser.Expr]Type
 
 	// Contract context
 	inEnsures bool // true when checking an ensures clause; enables old()
@@ -1468,8 +1493,8 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 		}
 		// Method call: x.method(args) where Fn is a FieldExpr
 		if fe, ok := e.Fn.(*parser.FieldExpr); ok {
-			if mt, err2 := c.tryMethodCall(e, fe, sc); err2 == nil && mt != nil {
-				return mt, nil
+			if mt, err2 := c.tryMethodCall(e, fe, sc); mt != nil || err2 != nil {
+				return mt, err2
 			}
 		}
 		return c.inferCallExpr(e, sc)
@@ -1515,6 +1540,9 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 
 	case *parser.LambdaExpr:
 		return c.inferLambdaExpr(e, sc)
+
+	case *parser.SpawnExpr:
+		return c.inferSpawnExpr(e, sc)
 
 	case *parser.OldExpr:
 		return c.inferOldExpr(e, sc)
@@ -2667,6 +2695,8 @@ func walkIdentsInExpr(e parser.Expr, fn func(string)) {
 		}
 	case *parser.LambdaExpr:
 		// Don't recurse into nested lambdas — they have their own capture analysis.
+	case *parser.SpawnExpr:
+		// Don't recurse into nested spawns — they have their own capture analysis.
 	case *parser.OldExpr:
 		walkIdentsInExpr(v.X, fn)
 	case *parser.BlockExpr:
@@ -3478,6 +3508,22 @@ func (c *checker) tryMethodCall(e *parser.CallExpr, fe *parser.FieldExpr, sc *sc
 	if gen, ok := baseType.(*GenType); ok && (gen.Con == "ref" || gen.Con == "refmut") && len(gen.Params) > 0 {
 		baseType = gen.Params[0]
 	}
+
+	// Special built-in method on task<T>*: .join() -> result<T, str>
+	if gen, ok := baseType.(*GenType); ok && gen.Con == "task" && len(gen.Params) == 1 {
+		methodName := fe.Field.Lexeme
+		if methodName != "join" {
+			return nil, c.errorf(fe.Field, "task<%s> has no method %q (only .join())", gen.Params[0], methodName)
+		}
+		if len(e.Args) != 0 {
+			return nil, c.errorf(fe.Field, "task.join() takes no arguments")
+		}
+		T := gen.Params[0]
+		retT := &GenType{Con: "result", Params: []Type{T, TStr}}
+		c.taskJoins[e] = T
+		return c.record(e, retT), nil
+	}
+
 	st, ok := baseType.(*StructType)
 	if !ok {
 		return nil, nil // not a struct, not a method call
@@ -3602,4 +3648,82 @@ func (c *checker) checkTupleDestructureStmt(s *parser.TupleDestructureStmt, sc *
 		}
 	}
 	return nil
+}
+
+// inferSpawnExpr type-checks a spawn { body } expression and returns task<T>.
+// T is inferred from the first return statement in the body; unit if none.
+func (c *checker) inferSpawnExpr(e *parser.SpawnExpr, sc *scope) (Type, error) {
+	// Infer result type T from the first return statement in the body.
+	T := Type(TUnit)
+	for _, stmt := range e.Body.Stmts {
+		if rs, ok := stmt.(*parser.ReturnStmt); ok {
+			if rs.Value != nil && !isUnitIdent(rs.Value) {
+				t, err := c.checkExpr(rs.Value, sc, nil)
+				if err != nil {
+					return nil, err
+				}
+				if t == TIntLit {
+					t = TI64
+				} else if t == TFloatLit {
+					t = TF64
+				}
+				T = t
+			}
+			break
+		}
+	}
+
+	// Type-check the body as a block returning T.
+	bodySc := newScope(sc)
+	if err := c.checkBlock(e.Body, bodySc, T); err != nil {
+		return nil, err
+	}
+
+	// Register the spawn with capture analysis.
+	c.spawnCount++
+	name := fmt.Sprintf("_cnd_spawn_%d", c.spawnCount)
+
+	// Collect names local to the spawn body.
+	localNames := make(map[string]bool)
+	collectLetNames(e.Body.Stmts, localNames)
+
+	// Walk body collecting free variable references.
+	seen := make(map[string]bool)
+	var captures []string
+	var captureTypes []Type
+	var captureByRef []bool
+	for _, stmt := range e.Body.Stmts {
+		walkIdentsInStmt(stmt, func(n string) {
+			if seen[n] || localNames[n] {
+				return
+			}
+			if _, isFn := c.fnSigs[n]; isFn {
+				return
+			}
+			if info, ok := sc.lookupInfo(n); ok {
+				seen[n] = true
+				captures = append(captures, n)
+				captureTypes = append(captureTypes, info.typ)
+				captureByRef = append(captureByRef, info.mutable)
+			}
+		})
+	}
+
+	info := &SpawnInfo{
+		Node:         e,
+		Name:         name,
+		ResultType:   T,
+		Captures:     captures,
+		CaptureTypes: captureTypes,
+		CaptureByRef: captureByRef,
+	}
+	c.spawns = append(c.spawns, info)
+
+	return c.record(e, &GenType{Con: "task", Params: []Type{T}}), nil
+}
+
+// isUnitIdent reports whether an expression is the identifier "unit".
+func isUnitIdent(e parser.Expr) bool {
+	ident, ok := e.(*parser.IdentExpr)
+	return ok && ident.Tok.Lexeme == "unit"
 }

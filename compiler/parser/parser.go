@@ -1277,6 +1277,8 @@ func (p *parser) parsePrimaryExpr() (Expr, error) {
 		return &UnaryExpr{Op: star, Operand: operand}, nil
 	case lexer.TokFn:
 		return p.parseLambdaExpr()
+	case lexer.TokSpawn:
+		return p.parseSpawnExpr()
 	case lexer.TokOld:
 		oldTok := p.advance()
 		if _, err := p.expect(lexer.TokLParen); err != nil {
@@ -1378,6 +1380,15 @@ func (p *parser) parseLambdaExpr() (*LambdaExpr, error) {
 		return nil, err
 	}
 	return &LambdaExpr{FnTok: fnTok, Params: params, RetType: retType, Body: body}, nil
+}
+
+func (p *parser) parseSpawnExpr() (*SpawnExpr, error) {
+	spawnTok := p.advance() // consume 'spawn'
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &SpawnExpr{SpawnTok: spawnTok, Body: body}, nil
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────

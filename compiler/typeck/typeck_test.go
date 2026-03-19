@@ -1966,3 +1966,76 @@ func TestCapUnknownCapabilityError(t *testing.T) {
 fn f(x: cap<Undeclared>) -> unit { return unit }
 `, "unknown capability")
 }
+
+// ── M10.1 task<T> / spawn ────────────────────────────────────────────────────
+
+func TestSpawnBasicParsesOk(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let t = spawn { return 42 }
+    return unit
+}
+`)
+}
+
+func TestSpawnReturnTypeIsTask(t *testing.T) {
+	r := mustCompile(t, `
+fn main() -> unit {
+    let t = spawn { return 42 }
+    return unit
+}
+`)
+	// At least one spawn should have been registered.
+	if len(r.Spawns) == 0 {
+		t.Errorf("expected at least one SpawnInfo, got none")
+	}
+}
+
+func TestSpawnJoinReturnsResult(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let t = spawn { return 42 }
+    let r = t.join()
+    return unit
+}
+`)
+}
+
+func TestSpawnUnitBody(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let t = spawn { return unit }
+    return unit
+}
+`)
+}
+
+func TestSpawnCapturesOuterVar(t *testing.T) {
+	mustCompile(t, `
+fn main() -> unit {
+    let x: i64 = 10
+    let t = spawn { return x }
+    return unit
+}
+`)
+}
+
+func TestSpawnJoinNoArgs(t *testing.T) {
+	mustFail(t, `
+fn main() -> unit {
+    let t = spawn { return 1 }
+    let r = t.join(42)
+    return unit
+}
+`, "no arguments")
+}
+
+func TestSpawnTaskNoUnknownMethod(t *testing.T) {
+	mustFail(t, `
+fn main() -> unit {
+    let t = spawn { return 1 }
+    let r = t.foo()
+    return unit
+}
+`, "no method")
+}

@@ -47,6 +47,7 @@ traits, effects, contracts, pattern matching, and a standard library.
 | **M7.4** | `#export_json` struct directive: generates `StructName_to_json(S) -> CandorStr` and `StructName_from_json(CandorStr) -> result<S,str>` C functions for annotated structs; supports str, bool, integer, and float fields |
 | **M8.3** | `candorc doc --html` documentation generator: `///` doc-comment syntax recognised by lexer (consumed, no token emitted); `compiler/doc` package with `ExtractDocComments` (raw source pre-pass) and `GenHTML` (self-contained HTML with fn cards, struct/enum sections, effects tags, contract badges); 9 doc package tests pass |
 | **M7.3** | `cap<T>` capability tokens: `cap Name` declaration introduces a named capability; `cap<Name>` is a zero-size proof type; `cap(X)` function annotation enforced at call sites — caller must have `cap(X)` annotation or `cap<X>` in scope; C backend emits `typedef uint8_t cap_Name`; 6 typeck tests pass |
+| **M10.1** | `task<T>` / `spawn` structured concurrency: `spawn { return expr }` starts a pthread and returns `task<T>`; `.join()` blocks and returns `result<T, str>`; per-spawn context struct heap-allocated and passed to `pthread_create`; `_CndTask_T` struct with thread handle + result storage; `#include <pthread.h>` emitted when spawns present; 7 typeck tests + 4 emit_c tests pass |
 
 ### Known language gaps (not yet wired)
 - Named-return / early-exit in closures

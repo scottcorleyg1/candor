@@ -1176,3 +1176,61 @@ fn test_add() -> unit {
 		t.Errorf("expected 'test' in Directives, got %v", fn.Directives)
 	}
 }
+
+// ── M10.1 task<T> / spawn emit ────────────────────────────────────────────────
+
+func TestSpawnEmitsPthread(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let t = spawn { return 42 }
+    return unit
+}
+`
+	c := pipeline(t, src)
+	if !strings.Contains(c, "pthread_create") {
+		t.Errorf("expected pthread_create in C output, got:\n%s", c)
+	}
+	if !strings.Contains(c, "pthread.h") {
+		t.Errorf("expected pthread.h include, got:\n%s", c)
+	}
+}
+
+func TestSpawnEmitsTaskStruct(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let t = spawn { return 42 }
+    return unit
+}
+`
+	c := pipeline(t, src)
+	if !strings.Contains(c, "_CndTask_") {
+		t.Errorf("expected _CndTask_ struct in C output, got:\n%s", c)
+	}
+}
+
+func TestSpawnJoinEmitsPthreadJoin(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let t = spawn { return 42 }
+    let r = t.join()
+    return unit
+}
+`
+	c := pipeline(t, src)
+	if !strings.Contains(c, "pthread_join") {
+		t.Errorf("expected pthread_join in C output, got:\n%s", c)
+	}
+}
+
+func TestSpawnThunkFunctionEmitted(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let t = spawn { return 7 }
+    return unit
+}
+`
+	c := pipeline(t, src)
+	if !strings.Contains(c, "_cnd_spawn_1_fn") {
+		t.Errorf("expected _cnd_spawn_1_fn in C output, got:\n%s", c)
+	}
+}
