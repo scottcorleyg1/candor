@@ -1487,6 +1487,24 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 				return c.inferArcDeref(e, ident, sc)
 			case "arc_drop":
 				return c.inferArcDrop(e, ident, sc)
+			case "tensor_zeros":
+				return c.inferTensorZeros(e, ident, sc, hint)
+			case "tensor_from_vec":
+				return c.inferTensorFromVec(e, ident, sc, hint)
+			case "tensor_to_vec":
+				return c.inferTensorToVec(e, ident, sc)
+			case "tensor_get":
+				return c.inferTensorGet(e, ident, sc)
+			case "tensor_set":
+				return c.inferTensorSet(e, ident, sc)
+			case "tensor_ndim":
+				return c.inferTensorNdim(e, ident, sc)
+			case "tensor_shape":
+				return c.inferTensorShape(e, ident, sc)
+			case "tensor_len":
+				return c.inferTensorLen(e, ident, sc)
+			case "tensor_free":
+				return c.inferTensorFree(e, ident, sc)
 			case "refmut":
 				return c.inferRefmutCall(e, sc)
 			}
@@ -3082,6 +3100,210 @@ func (c *checker) inferArcDrop(e *parser.CallExpr, fn *parser.IdentExpr, sc *sco
 	return TUnit, nil
 }
 
+
+// -- tensor built-in functions -----------------------------------------------
+
+// tensor_zeros(shape: vec<i64>) -> tensor<T>   (T from type hint)
+func (c *checker) inferTensorZeros(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "tensor_zeros() takes 1 argument: shape as vec<i64>")
+	}
+	shapeType, err := c.checkExpr(e.Args[0], sc, &GenType{Con: "vec", Params: []Type{TI64}})
+	if err != nil {
+		return nil, err
+	}
+	shapeGen, ok := shapeType.(*GenType)
+	if !ok || shapeGen.Con != "vec" {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_zeros() shape must be vec<i64>, got %s", shapeType)
+	}
+	// Derive element type from hint (e.g. let t: tensor<f32> = tensor_zeros(...))
+	var elemType Type = TF64
+	if gen, ok := hint.(*GenType); ok && gen.Con == "tensor" && len(gen.Params) == 1 {
+		elemType = gen.Params[0]
+	}
+	t := &GenType{Con: "tensor", Params: []Type{elemType}}
+	c.record(fn, t)
+	return t, nil
+}
+
+// tensor_from_vec(data: vec<T>, shape: vec<i64>) -> tensor<T>
+func (c *checker) inferTensorFromVec(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
+	if len(e.Args) != 2 {
+		return nil, c.errorf(e.LParen, "tensor_from_vec() takes 2 arguments: vec<T> data, vec<i64> shape")
+	}
+	var innerHint Type
+	if gen, ok := hint.(*GenType); ok && gen.Con == "tensor" && len(gen.Params) == 1 {
+		innerHint = gen.Params[0]
+	}
+	dataType, err := c.checkExpr(e.Args[0], sc, &GenType{Con: "vec", Params: []Type{innerHint}})
+	if err != nil {
+		return nil, err
+	}
+	dataGen, ok := dataType.(*GenType)
+	if !ok || dataGen.Con != "vec" || len(dataGen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_from_vec() first arg must be vec<T>, got %s", dataType)
+	}
+	_, err = c.checkExpr(e.Args[1], sc, &GenType{Con: "vec", Params: []Type{TI64}})
+	if err != nil {
+		return nil, err
+	}
+	t := &GenType{Con: "tensor", Params: []Type{dataGen.Params[0]}}
+	c.record(fn, t)
+	return t, nil
+}
+
+// tensor_to_vec(t: tensor<T>) -> vec<T>
+func (c *checker) inferTensorToVec(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "tensor_to_vec() takes 1 argument: tensor<T>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := argType.(*GenType)
+	if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_to_vec() requires tensor<T>, got %s", argType)
+	}
+	t := &GenType{Con: "vec", Params: []Type{gen.Params[0]}}
+	c.record(fn, t)
+	return t, nil
+}
+
+// tensor_get(t: ref<tensor<T>>, idx: vec<i64>) -> T
+func (c *checker) inferTensorGet(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 2 {
+		return nil, c.errorf(e.LParen, "tensor_get() takes 2 arguments: ref<tensor<T>>, vec<i64>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Accept both tensor<T> and ref<tensor<T>>
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	gen, ok := inner.(*GenType)
+	if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_get() first arg must be tensor<T> or ref<tensor<T>>, got %s", argType)
+	}
+	_, err = c.checkExpr(e.Args[1], sc, &GenType{Con: "vec", Params: []Type{TI64}})
+	if err != nil {
+		return nil, err
+	}
+	elemType := gen.Params[0]
+	c.record(fn, elemType)
+	return elemType, nil
+}
+
+// tensor_set(t: ref<tensor<T>>, idx: vec<i64>, val: T) -> unit
+func (c *checker) inferTensorSet(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 3 {
+		return nil, c.errorf(e.LParen, "tensor_set() takes 3 arguments: ref<tensor<T>>, vec<i64>, T")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	gen, ok := inner.(*GenType)
+	if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_set() first arg must be tensor<T> or ref<tensor<T>>, got %s", argType)
+	}
+	_, err = c.checkExpr(e.Args[1], sc, &GenType{Con: "vec", Params: []Type{TI64}})
+	if err != nil {
+		return nil, err
+	}
+	_, err = c.checkExpr(e.Args[2], sc, gen.Params[0])
+	if err != nil {
+		return nil, err
+	}
+	c.record(fn, TUnit)
+	return TUnit, nil
+}
+
+// tensor_ndim(t: ref<tensor<T>>) -> i64
+func (c *checker) inferTensorNdim(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "tensor_ndim() takes 1 argument: tensor<T> or ref<tensor<T>>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	if gen, ok := inner.(*GenType); !ok || gen.Con != "tensor" {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_ndim() requires tensor<T> or ref<tensor<T>>, got %s", argType)
+	}
+	c.record(fn, TI64)
+	return TI64, nil
+}
+
+// tensor_shape(t: ref<tensor<T>>) -> vec<i64>
+func (c *checker) inferTensorShape(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "tensor_shape() takes 1 argument: tensor<T> or ref<tensor<T>>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	if gen, ok := inner.(*GenType); !ok || gen.Con != "tensor" {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_shape() requires tensor<T> or ref<tensor<T>>, got %s", argType)
+	}
+	t := &GenType{Con: "vec", Params: []Type{TI64}}
+	c.record(fn, t)
+	return t, nil
+}
+
+// tensor_len(t: ref<tensor<T>>) -> i64
+func (c *checker) inferTensorLen(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "tensor_len() takes 1 argument: tensor<T> or ref<tensor<T>>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	if gen, ok := inner.(*GenType); !ok || gen.Con != "tensor" {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_len() requires tensor<T> or ref<tensor<T>>, got %s", argType)
+	}
+	c.record(fn, TI64)
+	return TI64, nil
+}
+
+// tensor_free(t: tensor<T>) -> unit
+func (c *checker) inferTensorFree(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "tensor_free() takes 1 argument: tensor<T>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := argType.(*GenType)
+	if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "tensor_free() requires tensor<T>, got %s", argType)
+	}
+	_ = gen
+	c.record(fn, TUnit)
+	return TUnit, nil
+}
 
 func (c *checker) inferConstructorCall(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {
 	switch fn.Tok.Type {

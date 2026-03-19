@@ -128,6 +128,9 @@ func (e *emitter) emitFile(file *parser.File) error {
 	if err := e.emitResultStructTypedefs(); err != nil {
 		return err
 	}
+	if err := e.emitTensorStructTypedefs(); err != nil {
+		return err
+	}
 
 
 	// Emit enum definitions (tagged unions) and struct definitions.
@@ -168,6 +171,9 @@ func (e *emitter) emitFile(file *parser.File) error {
 		return err
 	}
 	if err := e.emitRingStructHelpers(); err != nil {
+		return err
+	}
+	if err := e.emitTensorStructHelpers(); err != nil {
 		return err
 	}
 
@@ -529,6 +535,10 @@ func (e *emitter) mangle(s string) string {
 
 func (e *emitter) vecTypeName(elemC string) string {
 	return "_CndVec_" + e.mangle(elemC)
+}
+
+func (e *emitter) tensorTypeName(elemC string) string {
+	return "_CndTensor_" + e.mangle(elemC)
 }
 
 func (e *emitter) vecPushName(elemC string) string {
@@ -1209,6 +1219,57 @@ func (e *emitter) emitRingStructHelpers() error {
 	return nil
 }
 
+func (e *emitter) emitTensorStructTypedefs() error {
+	seen := map[string]bool{}
+	for _, t := range e.allUsedTypes() {
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+			continue
+		}
+		elemC, err := e.cType(gen.Params[0])
+		if err != nil {
+			continue
+		}
+		name := e.tensorTypeName(elemC)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		e.writef("typedef struct %s %s;\n", name, name)
+	}
+	if len(seen) > 0 {
+		e.writeln("")
+	}
+	return nil
+}
+
+// emitTensorStructHelpers emits the struct body for each distinct tensor<T> used.
+// The struct is emitted here (after all user types) so the element type T is fully defined.
+func (e *emitter) emitTensorStructHelpers() error {
+	seen := map[string]bool{}
+	for _, t := range e.allUsedTypes() {
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+			continue
+		}
+		elemC, err := e.cType(gen.Params[0])
+		if err != nil {
+			continue
+		}
+		name := e.tensorTypeName(elemC)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		// struct _CndTensor_T { T* _data; int64_t _size; int64_t _ndim; int64_t* _shape; };
+		e.writef("struct %s { %s* _data; int64_t _size; int64_t _ndim; int64_t* _shape; };\n", name, elemC)
+	}
+	if len(seen) > 0 {
+		e.writeln("")
+	}
+	return nil
+}
+
 func (e *emitter) emitResultStructTypedefs() error {
 	seen := map[string]bool{}
 	for _, t := range e.res.ExprTypes {
@@ -1290,6 +1351,22 @@ func (e *emitter) ensureTypeDependenciesEmitted(t typeck.Type) error {
 			}
 			e.emittingTypes[name] = true
 			e.writef("struct %s { %s* _data; uint64_t _cap; uint64_t _head; uint64_t _len; };\n", name, elemC)
+			e.emittedTypes[name] = true
+			e.emittingTypes[name] = false
+			return nil
+		}
+
+		if t.Con == "tensor" && len(t.Params) == 1 {
+			elemC, err := e.cType(t.Params[0])
+			if err != nil {
+				return err
+			}
+			name := e.tensorTypeName(elemC)
+			if e.emittedTypes[name] || e.emittingTypes[name] {
+				return nil
+			}
+			e.emittingTypes[name] = true
+			e.writef("struct %s { %s* _data; int64_t _size; int64_t _ndim; int64_t* _shape; };\n", name, elemC)
 			e.emittedTypes[name] = true
 			e.emittingTypes[name] = false
 			return nil
@@ -2548,6 +2625,68 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 					return nil
 				}
 			}
+			if ident.Tok.Lexeme == "tensor_zeros" {
+				t := e.res.ExprTypes[ident]
+				if gen, ok2 := t.(*typeck.GenType); ok2 && gen.Con == "tensor" && len(gen.Params) == 1 {
+					elemC, err := e.cType(gen.Params[0])
+					if err != nil {
+						return err
+					}
+					name := e.tensorTypeName(elemC)
+					vecI64 := e.vecTypeName("int64_t")
+					var shapeB strings.Builder
+					if len(ex.Args) == 1 {
+						if err := e.emitExpr(ex.Args[0], &shapeB); err != nil {
+							return err
+						}
+					}
+					// tensor_zeros(shape) → allocate zero-filled data + copy shape dims
+					fmt.Fprintf(sb,
+						"(__extension__ ({ %s _shp = (%s); int64_t _sz = 1; "+
+							"for (uint64_t _i = 0; _i < _shp._len; _i++) _sz *= _shp._data[_i]; "+
+							"%s _t; _t._ndim = (int64_t)_shp._len; "+
+							"_t._shape = (int64_t*)malloc(_shp._len * sizeof(int64_t)); "+
+							"for (uint64_t _i = 0; _i < _shp._len; _i++) _t._shape[_i] = _shp._data[_i]; "+
+							"_t._size = _sz; _t._data = (%s*)calloc((size_t)_sz, sizeof(%s)); _t; }))",
+						vecI64, shapeB.String(), name, elemC, elemC)
+					return nil
+				}
+			}
+			if ident.Tok.Lexeme == "tensor_from_vec" {
+				t := e.res.ExprTypes[ident]
+				if gen, ok2 := t.(*typeck.GenType); ok2 && gen.Con == "tensor" && len(gen.Params) == 1 {
+					elemC, err := e.cType(gen.Params[0])
+					if err != nil {
+						return err
+					}
+					name := e.tensorTypeName(elemC)
+					vecI64 := e.vecTypeName("int64_t")
+					vecElem := e.vecTypeName(elemC)
+					var dataB, shapeB strings.Builder
+					if len(ex.Args) >= 1 {
+						if err := e.emitExpr(ex.Args[0], &dataB); err != nil {
+							return err
+						}
+					}
+					if len(ex.Args) >= 2 {
+						if err := e.emitExpr(ex.Args[1], &shapeB); err != nil {
+							return err
+						}
+					}
+					fmt.Fprintf(sb,
+						"(__extension__ ({ %s _d = (%s); %s _shp = (%s); "+
+							"int64_t _sz = 1; "+
+							"for (uint64_t _i = 0; _i < _shp._len; _i++) _sz *= _shp._data[_i]; "+
+							"%s _t; _t._ndim = (int64_t)_shp._len; "+
+							"_t._shape = (int64_t*)malloc(_shp._len * sizeof(int64_t)); "+
+							"for (uint64_t _i = 0; _i < _shp._len; _i++) _t._shape[_i] = _shp._data[_i]; "+
+							"_t._size = _sz; _t._data = (%s*)malloc((size_t)_sz * sizeof(%s)); "+
+							"for (int64_t _i = 0; _i < _sz && _i < (int64_t)_d._len; _i++) _t._data[_i] = _d._data[_i]; "+
+							"_t; }))",
+						vecElem, dataB.String(), vecI64, shapeB.String(), name, elemC, elemC)
+					return nil
+				}
+			}
 			if handled, err := e.emitBuiltinCall(ident.Tok.Lexeme, ex.Args, sb); handled {
 				return err
 			}
@@ -3446,6 +3585,157 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			return true, err
 		}
 		sb.WriteString("; if (__sync_sub_and_fetch((int64_t*)((char*)__ad - 8), 1) == 0) free((char*)__ad - 8); })")
+		return true, nil
+
+	case "tensor_to_vec":
+		// tensor_to_vec(t) → copy _data into a new vec<T>
+		if len(args) != 1 {
+			return false, nil
+		}
+		t := e.res.ExprTypes[args[0]]
+		// unwrap ref<tensor<T>>
+		if ref, ok := t.(*typeck.GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+			t = ref.Params[0]
+		}
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+			return false, nil
+		}
+		elemC, err := e.cType(gen.Params[0])
+		if err != nil {
+			return true, err
+		}
+		vecT := e.vecTypeName(elemC)
+		pushFn := e.vecPushName(elemC)
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __typeof__(%s) __ts = (%s); %s _v = {._data=NULL,._len=0,._cap=0}; "+
+				"for (int64_t _i = 0; _i < __ts._size; _i++) { %s(&_v, __ts._data[_i]); } _v; }))",
+			argB.String(), argB.String(), vecT, pushFn)
+		return true, nil
+
+	case "tensor_get":
+		// tensor_get(t, idx) → t._data[flat_index(idx)]
+		if len(args) != 2 {
+			return false, nil
+		}
+		t := e.res.ExprTypes[args[0]]
+		if ref, ok := t.(*typeck.GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+			t = ref.Params[0]
+		}
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+			return false, nil
+		}
+		vecI64 := e.vecTypeName("int64_t")
+		var tB, idxB strings.Builder
+		if err := e.emitExpr(args[0], &tB); err != nil {
+			return true, err
+		}
+		if err := e.emitExpr(args[1], &idxB); err != nil {
+			return true, err
+		}
+		// Use address-of for value type; if already a pointer use directly.
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __auto_type _tg = &(%s); %s _idx = (%s); "+
+				"int64_t _fi = 0; "+
+				"for (int64_t _d = 0; _d < _tg->_ndim; _d++) { "+
+				"int64_t _str = 1; for (int64_t _k = _d+1; _k < _tg->_ndim; _k++) _str *= _tg->_shape[_k]; "+
+				"_fi += _idx._data[_d] * _str; } "+
+				"_tg->_data[_fi]; }))",
+			tB.String(), vecI64, idxB.String())
+		return true, nil
+
+	case "tensor_set":
+		// tensor_set(t, idx, val) → t._data[flat_index(idx)] = val
+		if len(args) != 3 {
+			return false, nil
+		}
+		t := e.res.ExprTypes[args[0]]
+		if ref, ok := t.(*typeck.GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+			t = ref.Params[0]
+		}
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "tensor" || len(gen.Params) != 1 {
+			return false, nil
+		}
+		vecI64 := e.vecTypeName("int64_t")
+		var tB, idxB, valB strings.Builder
+		if err := e.emitExpr(args[0], &tB); err != nil {
+			return true, err
+		}
+		if err := e.emitExpr(args[1], &idxB); err != nil {
+			return true, err
+		}
+		if err := e.emitExpr(args[2], &valB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __auto_type _ts = &(%s); %s _idx = (%s); "+
+				"int64_t _fi = 0; "+
+				"for (int64_t _d = 0; _d < _ts->_ndim; _d++) { "+
+				"int64_t _str = 1; for (int64_t _k = _d+1; _k < _ts->_ndim; _k++) _str *= _ts->_shape[_k]; "+
+				"_fi += _idx._data[_d] * _str; } "+
+				"_ts->_data[_fi] = (%s); }))",
+			tB.String(), vecI64, idxB.String(), valB.String())
+		return true, nil
+
+	case "tensor_ndim":
+		// tensor_ndim(t) → t._ndim
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb, "((__auto_type _tn = &(%s), _tn->_ndim))", argB.String())
+		return true, nil
+
+	case "tensor_len":
+		// tensor_len(t) → t._size
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb, "((__auto_type _tl = &(%s), _tl->_size))", argB.String())
+		return true, nil
+
+	case "tensor_shape":
+		// tensor_shape(t) → copy _shape array into vec<i64>
+		if len(args) != 1 {
+			return false, nil
+		}
+		vecI64 := e.vecTypeName("int64_t")
+		pushFn := e.vecPushName("int64_t")
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __auto_type _tsh = &(%s); %s _v = {._data=NULL,._len=0,._cap=0}; "+
+				"for (int64_t _i = 0; _i < _tsh->_ndim; _i++) { %s(&_v, _tsh->_shape[_i]); } _v; }))",
+			argB.String(), vecI64, pushFn)
+		return true, nil
+
+	case "tensor_free":
+		// tensor_free(t) → free shape + data
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __auto_type _tf = (%s); free(_tf._shape); free(_tf._data); }))",
+			argB.String())
 		return true, nil
 
 	case "print_char":
@@ -4859,6 +5149,15 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 				if ct, ok := tt.Params[0].(*typeck.CapabilityType); ok {
 					return "cap_" + ct.Name, nil
 				}
+			}
+		case "tensor":
+			// tensor<T> is a value-type multi-dimensional array.
+			if len(tt.Params) == 1 {
+				inner, err := e.cType(tt.Params[0])
+				if err != nil {
+					return "", err
+				}
+				return e.tensorTypeName(inner), nil
 			}
 		case "task":
 			// task<T> is a heap-allocated thread handle; emitted as _CndTask_T*.

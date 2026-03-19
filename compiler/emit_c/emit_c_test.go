@@ -1234,3 +1234,71 @@ fn main() -> unit {
 		t.Errorf("expected _cnd_spawn_1_fn in C output, got:\n%s", c)
 	}
 }
+
+// ── M11.2: tensor<T> emission ────────────────────────────────────────────────
+
+func TestTensorTypedefEmitted(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let shape: vec<i64> = [2, 3]
+    let t: tensor<f32> = tensor_zeros(shape)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "_CndTensor_float")
+}
+
+func TestTensorStructFieldsEmitted(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let shape: vec<i64> = [4]
+    let t: tensor<f64> = tensor_zeros(shape)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "_data")
+	assertContains(t, c, "_shape")
+	assertContains(t, c, "_ndim")
+}
+
+func TestTensorZerosEmitsCalloc(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let shape: vec<i64> = [3]
+    let t: tensor<f32> = tensor_zeros(shape)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "calloc")
+}
+
+func TestTensorFromVecEmitted(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let data: vec<f32> = [1.0, 2.0]
+    let shape: vec<i64> = [2]
+    let t: tensor<f32> = tensor_from_vec(data, shape)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "_CndTensor_float")
+}
+
+func TestTensorGetEmitted(t *testing.T) {
+	src := `
+fn main() -> unit {
+    let data: vec<f32> = [1.0, 2.0, 3.0, 4.0]
+    let shape: vec<i64> = [2, 2]
+    let mut t: tensor<f32> = tensor_from_vec(data, shape)
+    let idx: vec<i64> = [0, 1]
+    let v: f32 = tensor_get(t, idx)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "_fi")
+}

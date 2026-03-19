@@ -2039,3 +2039,118 @@ fn main() -> unit {
 }
 `, "no method")
 }
+
+// ── M11.2: tensor<T> builtin type ────────────────────────────────────────────
+
+func TestTensorZerosF32(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let shape: vec<i64> = [2, 3]
+    let t: tensor<f32> = tensor_zeros(shape)
+    return unit
+}`)
+}
+
+func TestTensorZerosHint(t *testing.T) {
+	// element type inferred from annotation
+	mustCompile(t, `
+fn f() -> tensor<f64> {
+    let shape: vec<i64> = [4]
+    return tensor_zeros(shape)
+}`)
+}
+
+func TestTensorFromVec(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let data: vec<f32> = [1.0, 2.0, 3.0, 4.0]
+    let shape: vec<i64> = [2, 2]
+    let t: tensor<f32> = tensor_from_vec(data, shape)
+    return unit
+}`)
+}
+
+func TestTensorToVec(t *testing.T) {
+	mustCompile(t, `
+fn f() -> vec<f32> {
+    let data: vec<f32> = [1.0, 2.0]
+    let shape: vec<i64> = [2]
+    let t: tensor<f32> = tensor_from_vec(data, shape)
+    return tensor_to_vec(t)
+}`)
+}
+
+func TestTensorGet(t *testing.T) {
+	mustCompile(t, `
+fn f() -> f32 {
+    let data: vec<f32> = [1.0, 2.0, 3.0, 4.0]
+    let shape: vec<i64> = [2, 2]
+    let mut t: tensor<f32> = tensor_from_vec(data, shape)
+    let idx: vec<i64> = [0, 1]
+    return tensor_get(t, idx)
+}`)
+}
+
+func TestTensorSet(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let data: vec<f32> = [0.0, 0.0, 0.0, 0.0]
+    let shape: vec<i64> = [2, 2]
+    let mut t: tensor<f32> = tensor_from_vec(data, shape)
+    let idx: vec<i64> = [1, 0]
+    tensor_set(t, idx, 9.0)
+    return unit
+}`)
+}
+
+func TestTensorNdim(t *testing.T) {
+	mustCompile(t, `
+fn f() -> i64 {
+    let shape: vec<i64> = [3, 4, 5]
+    let t: tensor<f64> = tensor_zeros(shape)
+    return tensor_ndim(t)
+}`)
+}
+
+func TestTensorShape(t *testing.T) {
+	mustCompile(t, `
+fn f() -> vec<i64> {
+    let shape: vec<i64> = [2, 3]
+    let t: tensor<f32> = tensor_zeros(shape)
+    return tensor_shape(t)
+}`)
+}
+
+func TestTensorLen(t *testing.T) {
+	mustCompile(t, `
+fn f() -> i64 {
+    let shape: vec<i64> = [4, 5]
+    let t: tensor<f32> = tensor_zeros(shape)
+    return tensor_len(t)
+}`)
+}
+
+func TestTensorFree(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let shape: vec<i64> = [10]
+    let t: tensor<f64> = tensor_zeros(shape)
+    tensor_free(t)
+    return unit
+}`)
+}
+
+func TestTensorZerosWrongArgCount(t *testing.T) {
+	mustFail(t, `fn f() -> unit { let t: tensor<f32> = tensor_zeros() return unit }`,
+		"tensor_zeros() takes 1 argument")
+}
+
+func TestTensorGetWrongType(t *testing.T) {
+	mustFail(t, `fn f() -> unit { tensor_get(42, 1) return unit }`,
+		"tensor_get() first arg must be tensor<T>")
+}
+
+func TestTensorFreeWrongType(t *testing.T) {
+	mustFail(t, `fn f() -> unit { tensor_free(42) return unit }`,
+		"tensor_free() requires tensor<T>")
+}
