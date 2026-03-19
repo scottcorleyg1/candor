@@ -1515,6 +1515,18 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 				return c.inferTensorCosine(e, ident, sc)
 			case "tensor_matmul":
 				return c.inferTensorMatmul(e, ident, sc)
+			case "mmap_open":
+				return c.inferMmapOpen(e, ident, sc)
+			case "mmap_anon":
+				return c.inferMmapAnon(e, ident, sc)
+			case "mmap_deref":
+				return c.inferMmapDeref(e, ident, sc)
+			case "mmap_flush":
+				return c.inferMmapFlush(e, ident, sc)
+			case "mmap_close":
+				return c.inferMmapClose(e, ident, sc)
+			case "mmap_len":
+				return c.inferMmapLen(e, ident, sc)
 			case "refmut":
 				return c.inferRefmutCall(e, sc)
 			}
@@ -3405,6 +3417,122 @@ func (c *checker) inferTensorMatmul(e *parser.CallExpr, fn *parser.IdentExpr, sc
 	}
 	c.record(fn, TUnit)
 	return TUnit, nil
+}
+
+// -- mmap built-in functions (M12.1) ----------------------------------------
+
+// mmapResultType builds result<mmap<u8>, str>.
+func mmapResultType() Type {
+	return &GenType{Con: "result", Params: []Type{&GenType{Con: "mmap", Params: []Type{TU8}}, TStr}}
+}
+
+// mmap_open(path: str, byte_len: u64) -> result<mmap<u8>, str>  effects(storage)
+func (c *checker) inferMmapOpen(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 2 {
+		return nil, c.errorf(e.LParen, "mmap_open() takes 2 arguments: path str, byte_len u64")
+	}
+	if _, err := c.checkExpr(e.Args[0], sc, TStr); err != nil {
+		return nil, err
+	}
+	if _, err := c.checkExpr(e.Args[1], sc, TU64); err != nil {
+		return nil, err
+	}
+	t := mmapResultType()
+	c.record(fn, t)
+	return t, nil
+}
+
+// mmap_anon(byte_len: u64) -> result<mmap<u8>, str>  — anonymous (no-file) mapping
+func (c *checker) inferMmapAnon(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "mmap_anon() takes 1 argument: byte_len u64")
+	}
+	if _, err := c.checkExpr(e.Args[0], sc, TU64); err != nil {
+		return nil, err
+	}
+	t := mmapResultType()
+	c.record(fn, t)
+	return t, nil
+}
+
+// mmap_deref(m: ref<mmap<T>>) -> ref<T>
+func (c *checker) inferMmapDeref(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "mmap_deref() takes 1 argument: mmap<T> or ref<mmap<T>>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	gen, ok := inner.(*GenType)
+	if !ok || gen.Con != "mmap" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "mmap_deref() requires mmap<T> or ref<mmap<T>>, got %s", argType)
+	}
+	t := &GenType{Con: "ref", Params: []Type{gen.Params[0]}}
+	c.record(fn, t)
+	return t, nil
+}
+
+// mmap_flush(m: ref<mmap<T>>) -> unit  effects(storage)
+func (c *checker) inferMmapFlush(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "mmap_flush() takes 1 argument: mmap<T> or ref<mmap<T>>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	if gen, ok := inner.(*GenType); !ok || gen.Con != "mmap" {
+		return nil, c.errorf(e.Args[0].Pos(), "mmap_flush() requires mmap<T> or ref<mmap<T>>, got %s", argType)
+	}
+	c.record(fn, TUnit)
+	return TUnit, nil
+}
+
+// mmap_close(m: mmap<T>) -> unit  effects(storage)
+func (c *checker) inferMmapClose(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "mmap_close() takes 1 argument: mmap<T>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := argType.(*GenType)
+	if !ok || gen.Con != "mmap" || len(gen.Params) != 1 {
+		return nil, c.errorf(e.Args[0].Pos(), "mmap_close() requires mmap<T>, got %s", argType)
+	}
+	_ = gen
+	c.record(fn, TUnit)
+	return TUnit, nil
+}
+
+// mmap_len(m: ref<mmap<T>>) -> u64
+func (c *checker) inferMmapLen(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope) (Type, error) {
+	if len(e.Args) != 1 {
+		return nil, c.errorf(e.LParen, "mmap_len() takes 1 argument: mmap<T> or ref<mmap<T>>")
+	}
+	argType, err := c.checkExpr(e.Args[0], sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	inner := argType
+	if ref, ok := argType.(*GenType); ok && ref.Con == "ref" && len(ref.Params) == 1 {
+		inner = ref.Params[0]
+	}
+	if gen, ok := inner.(*GenType); !ok || gen.Con != "mmap" {
+		return nil, c.errorf(e.Args[0].Pos(), "mmap_len() requires mmap<T> or ref<mmap<T>>, got %s", argType)
+	}
+	c.record(fn, TU64)
+	return TU64, nil
 }
 
 func (c *checker) inferConstructorCall(e *parser.CallExpr, fn *parser.IdentExpr, sc *scope, hint Type) (Type, error) {

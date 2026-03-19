@@ -94,6 +94,12 @@ func (e *emitter) emitFile(file *parser.File) error {
 	if len(e.res.Spawns) > 0 {
 		e.writeln("#include <pthread.h>")
 	}
+	if e.hasMmap() {
+		e.writeln("#ifndef _WIN32")
+		e.writeln("#  include <sys/mman.h>")
+		e.writeln("#  include <fcntl.h>")
+		e.writeln("#endif")
+	}
 	e.writeln("")
 	e.emitRuntimeHelpers()
 	e.writeln("")
@@ -129,6 +135,9 @@ func (e *emitter) emitFile(file *parser.File) error {
 		return err
 	}
 	if err := e.emitTensorStructTypedefs(); err != nil {
+		return err
+	}
+	if err := e.emitMmapStructTypedefs(); err != nil {
 		return err
 	}
 
@@ -174,6 +183,9 @@ func (e *emitter) emitFile(file *parser.File) error {
 		return err
 	}
 	if err := e.emitTensorStructHelpers(); err != nil {
+		return err
+	}
+	if err := e.emitMmapStructHelpers(); err != nil {
 		return err
 	}
 
@@ -539,6 +551,20 @@ func (e *emitter) vecTypeName(elemC string) string {
 
 func (e *emitter) tensorTypeName(elemC string) string {
 	return "_CndTensor_" + e.mangle(elemC)
+}
+
+func (e *emitter) mmapTypeName(elemC string) string {
+	return "_CndMmap_" + e.mangle(elemC)
+}
+
+// hasMmap returns true if any mmap<T> type appears in the program.
+func (e *emitter) hasMmap() bool {
+	for _, t := range e.allUsedTypes() {
+		if gen, ok := t.(*typeck.GenType); ok && gen.Con == "mmap" {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *emitter) vecPushName(elemC string) string {
@@ -1219,6 +1245,55 @@ func (e *emitter) emitRingStructHelpers() error {
 	return nil
 }
 
+func (e *emitter) emitMmapStructTypedefs() error {
+	seen := map[string]bool{}
+	for _, t := range e.allUsedTypes() {
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "mmap" || len(gen.Params) != 1 {
+			continue
+		}
+		elemC, err := e.cType(gen.Params[0])
+		if err != nil {
+			continue
+		}
+		name := e.mmapTypeName(elemC)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		e.writef("typedef struct %s %s;\n", name, name)
+	}
+	if len(seen) > 0 {
+		e.writeln("")
+	}
+	return nil
+}
+
+func (e *emitter) emitMmapStructHelpers() error {
+	seen := map[string]bool{}
+	for _, t := range e.allUsedTypes() {
+		gen, ok := t.(*typeck.GenType)
+		if !ok || gen.Con != "mmap" || len(gen.Params) != 1 {
+			continue
+		}
+		elemC, err := e.cType(gen.Params[0])
+		if err != nil {
+			continue
+		}
+		name := e.mmapTypeName(elemC)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		// struct _CndMmap_T { T* _data; uint64_t _len; int _fd; };
+		e.writef("struct %s { %s* _data; uint64_t _len; int _fd; };\n", name, elemC)
+	}
+	if len(seen) > 0 {
+		e.writeln("")
+	}
+	return nil
+}
+
 func (e *emitter) emitTensorStructTypedefs() error {
 	seen := map[string]bool{}
 	for _, t := range e.allUsedTypes() {
@@ -1367,6 +1442,22 @@ func (e *emitter) ensureTypeDependenciesEmitted(t typeck.Type) error {
 			}
 			e.emittingTypes[name] = true
 			e.writef("struct %s { %s* _data; int64_t _size; int64_t _ndim; int64_t* _shape; };\n", name, elemC)
+			e.emittedTypes[name] = true
+			e.emittingTypes[name] = false
+			return nil
+		}
+
+		if t.Con == "mmap" && len(t.Params) == 1 {
+			elemC, err := e.cType(t.Params[0])
+			if err != nil {
+				return err
+			}
+			name := e.mmapTypeName(elemC)
+			if e.emittedTypes[name] || e.emittingTypes[name] {
+				return nil
+			}
+			e.emittingTypes[name] = true
+			e.writef("struct %s { %s* _data; uint64_t _len; int _fd; };\n", name, elemC)
 			e.emittedTypes[name] = true
 			e.emittingTypes[name] = false
 			return nil
@@ -3863,6 +3954,128 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			aB.String(), bB.String(), outB.String())
 		return true, nil
 
+	case "mmap_open":
+		// mmap_open(path, byte_len) -> result<mmap<u8>, str>
+		if len(args) != 2 {
+			return false, nil
+		}
+		resType := &typeck.GenType{Con: "result", Params: []typeck.Type{
+			&typeck.GenType{Con: "mmap", Params: []typeck.Type{typeck.TU8}},
+			typeck.TStr,
+		}}
+		structName, err := e.resultTypeName(resType)
+		if err != nil {
+			return true, err
+		}
+		mmapName := e.mmapTypeName("uint8_t")
+		var pathB, lenB strings.Builder
+		if err := e.emitExpr(args[0], &pathB); err != nil {
+			return true, err
+		}
+		if err := e.emitExpr(args[1], &lenB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ const char* _mp = (%s); uint64_t _ml = (uint64_t)(%s); "+
+				"%s _mr = {0}; "+
+				"#ifndef _WIN32 "+
+				"int _mfd = open(_mp, O_RDWR|O_CREAT, 0644); "+
+				"if (_mfd < 0) { _mr._ok = 0; _mr._err_val = \"mmap_open: open failed\"; } "+
+				"else { ftruncate(_mfd, (off_t)_ml); "+
+				"void* _mptr = mmap(NULL, _ml, PROT_READ|PROT_WRITE, MAP_SHARED, _mfd, 0); "+
+				"if (_mptr == MAP_FAILED) { close(_mfd); _mr._ok = 0; _mr._err_val = \"mmap_open: mmap failed\"; } "+
+				"else { _mr._ok = 1; _mr._ok_val = (%s){ ._data=(uint8_t*)_mptr, ._len=_ml, ._fd=_mfd }; } } "+
+				"#else _mr._ok = 0; _mr._err_val = \"mmap_open: not supported on Windows\"; "+
+				"#endif "+
+				"_mr; }))",
+			pathB.String(), lenB.String(), structName, mmapName)
+		return true, nil
+
+	case "mmap_anon":
+		// mmap_anon(byte_len) -> result<mmap<u8>, str>  — anonymous mapping
+		if len(args) != 1 {
+			return false, nil
+		}
+		resType := &typeck.GenType{Con: "result", Params: []typeck.Type{
+			&typeck.GenType{Con: "mmap", Params: []typeck.Type{typeck.TU8}},
+			typeck.TStr,
+		}}
+		structName, err := e.resultTypeName(resType)
+		if err != nil {
+			return true, err
+		}
+		mmapName := e.mmapTypeName("uint8_t")
+		var lenB strings.Builder
+		if err := e.emitExpr(args[0], &lenB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ uint64_t _ml = (uint64_t)(%s); "+
+				"%s _mr = {0}; "+
+				"#ifndef _WIN32 "+
+				"void* _mptr = mmap(NULL, _ml, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0); "+
+				"if (_mptr == MAP_FAILED) { _mr._ok = 0; _mr._err_val = \"mmap_anon: mmap failed\"; } "+
+				"else { _mr._ok = 1; _mr._ok_val = (%s){ ._data=(uint8_t*)_mptr, ._len=_ml, ._fd=-1 }; } "+
+				"#else _mr._ok = 0; _mr._err_val = \"mmap_anon: not supported on Windows\"; "+
+				"#endif "+
+				"_mr; }))",
+			lenB.String(), structName, mmapName)
+		return true, nil
+
+	case "mmap_deref":
+		// mmap_deref(m) → m._data  (pointer to the mapped region)
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb, "((__auto_type _md = &(%s), _md->_data))", argB.String())
+		return true, nil
+
+	case "mmap_flush":
+		// mmap_flush(m) → msync
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __auto_type _mf = &(%s); "+
+				"#ifndef _WIN32 msync(_mf->_data, _mf->_len, MS_SYNC); #endif }))",
+			argB.String())
+		return true, nil
+
+	case "mmap_close":
+		// mmap_close(m) → munmap + close fd
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb,
+			"(__extension__ ({ __auto_type _mc = (%s); "+
+				"#ifndef _WIN32 munmap(_mc._data, _mc._len); if (_mc._fd >= 0) close(_mc._fd); #endif }))",
+			argB.String())
+		return true, nil
+
+	case "mmap_len":
+		// mmap_len(m) → m._len
+		if len(args) != 1 {
+			return false, nil
+		}
+		var argB strings.Builder
+		if err := e.emitExpr(args[0], &argB); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(sb, "((__auto_type _mln = &(%s), _mln->_len))", argB.String())
+		return true, nil
+
 	case "print_char":
 		if len(args) != 1 {
 			return false, nil
@@ -5283,6 +5496,15 @@ func (e *emitter) cType(t typeck.Type) (string, error) {
 					return "", err
 				}
 				return e.tensorTypeName(inner), nil
+			}
+		case "mmap":
+			// mmap<T> is a file-backed memory-mapped region; emitted as a value struct.
+			if len(tt.Params) == 1 {
+				inner, err := e.cType(tt.Params[0])
+				if err != nil {
+					return "", err
+				}
+				return e.mmapTypeName(inner), nil
 			}
 		case "task":
 			// task<T> is a heap-allocated thread handle; emitted as _CndTask_T*.

@@ -1359,3 +1359,61 @@ fn main() -> unit {
 	assertContains(t, c, "_K")
 	assertContains(t, c, "_N")
 }
+
+// ── M12.1: mmap<T> emission ───────────────────────────────────────────────────
+
+func TestMmapTypedefEmitted(t *testing.T) {
+	src := `
+fn f() -> unit {
+    let r: result<mmap<u8>, str> = mmap_anon(64)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "_CndMmap_uint8_t")
+}
+
+func TestMmapStructFieldsEmitted(t *testing.T) {
+	src := `
+fn f(m: mmap<u8>) -> unit {
+    mmap_close(m)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "_data")
+	assertContains(t, c, "_fd")
+}
+
+func TestMmapAnonEmitsMmap(t *testing.T) {
+	src := `
+fn f() -> unit {
+    let r: result<mmap<u8>, str> = mmap_anon(1024)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "MAP_ANONYMOUS")
+}
+
+func TestMmapOpenEmitsOpen(t *testing.T) {
+	src := `
+fn f() -> unit {
+    let r: result<mmap<u8>, str> = mmap_open("/tmp/x", 4096)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "O_RDWR")
+}
+
+func TestMmapHeaderEmitted(t *testing.T) {
+	src := `
+fn f() -> unit {
+    let r: result<mmap<u8>, str> = mmap_anon(64)
+    return unit
+}
+`
+	c := pipeline(t, src)
+	assertContains(t, c, "sys/mman.h")
+}

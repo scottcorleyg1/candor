@@ -2207,3 +2207,66 @@ func TestTensorL2WrongType(t *testing.T) {
 func TestEffectsSimdKnown(t *testing.T) {
 	mustCompile(t, `fn kern() -> unit effects(simd) { return unit }`)
 }
+
+// ── M12.1: mmap<T> memory-mapped files ───────────────────────────────────────
+
+func TestMmapOpenReturnsResult(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let r: result<mmap<u8>, str> = mmap_open("/tmp/test.bin", 4096)
+    return unit
+}`)
+}
+
+func TestMmapAnonReturnsResult(t *testing.T) {
+	mustCompile(t, `
+fn f() -> unit {
+    let r: result<mmap<u8>, str> = mmap_anon(1024)
+    return unit
+}`)
+}
+
+func TestMmapFlush(t *testing.T) {
+	mustCompile(t, `
+fn f(m: mmap<u8>) -> unit {
+    mmap_flush(m)
+    return unit
+}`)
+}
+
+func TestMmapClose(t *testing.T) {
+	mustCompile(t, `
+fn f(m: mmap<u8>) -> unit {
+    mmap_close(m)
+    return unit
+}`)
+}
+
+func TestMmapLen(t *testing.T) {
+	mustCompile(t, `
+fn f(m: mmap<u8>) -> u64 {
+    return mmap_len(m)
+}`)
+}
+
+func TestMmapDeref(t *testing.T) {
+	mustCompile(t, `
+fn f(m: mmap<u8>) -> ref<u8> {
+    return mmap_deref(m)
+}`)
+}
+
+func TestMmapOpenWrongArgCount(t *testing.T) {
+	mustFail(t, `fn f() -> unit { let r = mmap_open("/tmp/x") return unit }`,
+		"mmap_open() takes 2 arguments")
+}
+
+func TestMmapDerefWrongType(t *testing.T) {
+	mustFail(t, `fn f() -> unit { mmap_deref(42) return unit }`,
+		"mmap_deref() requires mmap<T>")
+}
+
+func TestMmapCloseWrongType(t *testing.T) {
+	mustFail(t, `fn f() -> unit { mmap_close(42) return unit }`,
+		"mmap_close() requires mmap<T>")
+}
