@@ -102,6 +102,18 @@ func (d *EnumDecl) declNode()        {}
 
 // EnumVariant: Name  or  Name(Type, ...)
 
+// CHeaderDecl: #c_header "path/to/header.h"
+// File-scope directive: instructs the compiler to parse the C header and
+// synthesize extern fn stubs for all recognised function prototypes.
+// Path is relative to the directory containing the .cnd source file.
+type CHeaderDecl struct {
+	Tok  lexer.Token
+	Path string // header file path as written in the directive
+}
+
+func (d *CHeaderDecl) Pos() lexer.Token { return d.Tok }
+func (d *CHeaderDecl) declNode()        {}
+
 // ExternFnDecl: extern fn name(params) -> ret [effects]
 // No body — the function is defined in C.
 type ExternFnDecl struct {

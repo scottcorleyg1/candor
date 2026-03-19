@@ -115,8 +115,20 @@ func (p *parser) parseFile(name string) (*File, error) {
 		// Collect file-scope directives immediately before a declaration.
 		// #test, #mcp_tool "desc", #intent "desc", etc.
 		if p.check(lexer.TokDirective) {
-			word := p.peek().Lexeme
+			tok := p.peek()
+			word := tok.Lexeme
 			p.advance()
+			// #c_header "path" is a standalone file-scope declaration; emit it
+			// directly rather than accumulating as a decoration for a following decl.
+			if word == "c_header" {
+				path := ""
+				if p.check(lexer.TokString) {
+					path = unquoteStr(p.peek().Lexeme)
+					p.advance()
+				}
+				file.Decls = append(file.Decls, &CHeaderDecl{Tok: tok, Path: path})
+				continue
+			}
 			// Capture an optional string argument on the same directive line.
 			if p.check(lexer.TokString) {
 				pendingDirectiveArgs[word] = unquoteStr(p.peek().Lexeme)

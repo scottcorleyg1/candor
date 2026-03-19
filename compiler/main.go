@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	emit_c "github.com/scottcorleyg1/candor/compiler/emit_c"
+	"github.com/scottcorleyg1/candor/compiler/cheader"
 	"github.com/scottcorleyg1/candor/compiler/diagnostics"
 	"github.com/scottcorleyg1/candor/compiler/doc"
 	"github.com/scottcorleyg1/candor/compiler/emit_llvm"
@@ -48,6 +49,13 @@ Target examples: aarch64-unknown-linux-gnu  x86_64-apple-macosx14.0  wasm32 (ali
 [dependencies] in Candor.toml:
   mylib      = "path:../mylib"
   remote-pkg = "git:https://github.com/user/repo@v1.0.0"
+
+C/CUDA header interop — place at the top of any .cnd source file:
+  #c_header "path/to/header.h"
+  Generates extern fn stubs for every C function prototype in the header.
+  Path is relative to the directory containing the .cnd file.
+  Supports: int/uint/long/float/double/size_t/explicit-width types, pointer types,
+            void params, preprocessor guards (skipped), line/block comments.
 
 A project is identified by a Candor.toml manifest file.`
 
@@ -740,6 +748,13 @@ func runCompileLLVM(srcPaths []string, outPath string, cfg BuildConfig) error {
 		}
 		files = append(files, file)
 	}
+
+	var errInject error
+	files, errInject = injectCHeaders(files, srcs)
+	if errInject != nil {
+		return errInject
+	}
+
 	sm := diagnostics.NewSourceMap(srcs)
 
 	res, err := typeck.CheckProgram(files)
@@ -816,6 +831,46 @@ func findClang() string {
 	return "clang"
 }
 
+// ── C header injection ────────────────────────────────────────────────────────
+
+// injectCHeaders scans parsed files for CHeaderDecl nodes.  For each one, the
+// referenced C header is parsed and the resulting extern fn stubs are prepended
+// as a synthetic *parser.File so they are visible during type-checking.
+// srcs is updated in-place so diagnostics can locate the synthetic source.
+func injectCHeaders(files []*parser.File, srcs map[string]string) ([]*parser.File, error) {
+	var stubs []*parser.File
+	for _, f := range files {
+		srcDir := filepath.Dir(f.Name)
+		for _, decl := range f.Decls {
+			ch, ok := decl.(*parser.CHeaderDecl)
+			if !ok {
+				continue
+			}
+			headerPath := ch.Path
+			if !filepath.IsAbs(headerPath) {
+				headerPath = filepath.Join(srcDir, headerPath)
+			}
+			candorSrc, err := cheader.ParseHeader(headerPath)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", f.Name, err)
+			}
+			synName := "<extern:" + ch.Path + ">"
+			srcs[synName] = candorSrc
+			tokens, err := lexer.Tokenize(synName, candorSrc)
+			if err != nil {
+				return nil, fmt.Errorf("c_header stub lex error: %w", err)
+			}
+			stub, err := parser.Parse(synName, tokens)
+			if err != nil {
+				return nil, fmt.Errorf("c_header stub parse error: %w", err)
+			}
+			stubs = append(stubs, stub)
+		}
+	}
+	// Prepend stubs so extern fn declarations are visible to all source files.
+	return append(stubs, files...), nil
+}
+
 // ── Core compile pipeline ─────────────────────────────────────────────────────
 
 func runCompile(srcPaths []string, outPath string, cfg BuildConfig) error {
@@ -838,6 +893,13 @@ func runCompile(srcPaths []string, outPath string, cfg BuildConfig) error {
 		}
 		files = append(files, file)
 	}
+
+	var err error
+	files, err = injectCHeaders(files, srcs)
+	if err != nil {
+		return err
+	}
+
 	sm := diagnostics.NewSourceMap(srcs)
 
 	res, err := typeck.CheckProgram(files)

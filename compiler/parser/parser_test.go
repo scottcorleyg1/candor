@@ -659,3 +659,59 @@ func TestMissingFnBody(t *testing.T) {
 func TestUnexpectedTokenInExpr(t *testing.T) {
 	parseErr(t, `fn f() -> unit { return @ }`)
 }
+
+// ── #c_header directive ───────────────────────────────────────────────────────
+
+func TestCHeaderDecl(t *testing.T) {
+	file := parse(t, `#c_header "sys/types.h"
+fn main() -> unit { return unit }
+`)
+	if len(file.Decls) < 2 {
+		t.Fatalf("expected at least 2 decls, got %d", len(file.Decls))
+	}
+	ch, ok := file.Decls[0].(*CHeaderDecl)
+	if !ok {
+		t.Fatalf("Decls[0] must be *CHeaderDecl, got %T", file.Decls[0])
+	}
+	if ch.Path != "sys/types.h" {
+		t.Errorf("CHeaderDecl.Path = %q, want %q", ch.Path, "sys/types.h")
+	}
+	if _, ok := file.Decls[1].(*FnDecl); !ok {
+		t.Errorf("Decls[1] must be *FnDecl, got %T", file.Decls[1])
+	}
+}
+
+func TestCHeaderDeclDoesNotDecorateNextFn(t *testing.T) {
+	// #c_header must NOT attach to the following fn as a directive.
+	file := parse(t, `#c_header "foo.h"
+fn f() -> unit { return unit }
+`)
+	fn, ok := file.Decls[1].(*FnDecl)
+	if !ok {
+		t.Fatalf("Decls[1] must be *FnDecl, got %T", file.Decls[1])
+	}
+	for _, d := range fn.Directives {
+		if d == "c_header" {
+			t.Errorf("c_header leaked into fn.Directives: %v", fn.Directives)
+		}
+	}
+}
+
+func TestMultipleCHeaderDecls(t *testing.T) {
+	file := parse(t, `#c_header "a.h"
+#c_header "b.h"
+fn f() -> unit { return unit }
+`)
+	if len(file.Decls) < 3 {
+		t.Fatalf("expected at least 3 decls, got %d", len(file.Decls))
+	}
+	for i, path := range []string{"a.h", "b.h"} {
+		ch, ok := file.Decls[i].(*CHeaderDecl)
+		if !ok {
+			t.Fatalf("Decls[%d] must be *CHeaderDecl, got %T", i, file.Decls[i])
+		}
+		if ch.Path != path {
+			t.Errorf("Decls[%d].Path = %q, want %q", i, ch.Path, path)
+		}
+	}
+}
