@@ -61,7 +61,9 @@ func compile(t *testing.T, dir, name, src string) string {
 	}
 
 	cc := findCC()
-	out, err := exec.Command(cc, "-o", binPath, cPath).CombinedOutput()
+	cmd := exec.Command(cc, "-o", binPath, cPath)
+	cmd.Env = ccEnv(cc)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("CC failed:\n%s\n%v", out, err)
 	}
@@ -76,14 +78,47 @@ func findCC() string {
 	if path, err := exec.LookPath("gcc"); err == nil {
 		return path
 	}
+	// Windows: check common MSYS2/MinGW installations.
+	if runtime.GOOS == "windows" {
+		for _, candidate := range []string{
+			`C:\msys64\mingw64\bin\gcc.exe`,
+			`C:\msys64\ucrt64\bin\gcc.exe`,
+			`C:\MinGW\bin\gcc.exe`,
+			`C:\mingw64\bin\gcc.exe`,
+		} {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
 	return "cc"
+}
+
+// ccEnv returns the environment for the C compiler with the compiler's own
+// bin directory prepended to PATH (needed for MinGW DLL resolution).
+func ccEnv(cc string) []string {
+	env := os.Environ()
+	dir := filepath.Dir(cc)
+	pathVar := os.Getenv("PATH")
+	if dir != "." && !strings.Contains(pathVar, dir) {
+		sep := string(os.PathListSeparator)
+		for i, e := range env {
+			if strings.EqualFold(strings.SplitN(e, "=", 2)[0], "PATH") {
+				env[i] = e + sep + dir
+				break
+			}
+		}
+	}
+	return env
 }
 
 func skipIfNoCC(t *testing.T) {
 	t.Helper()
 	cc := findCC()
-	if _, err := exec.LookPath(cc); err != nil {
-		t.Skipf("no C compiler found (%s not in PATH)", cc)
+	if _, err := os.Stat(cc); err != nil {
+		if _, err2 := exec.LookPath(cc); err2 != nil {
+			t.Skipf("no C compiler found (%s)", cc)
+		}
 	}
 }
 
@@ -157,12 +192,12 @@ func TestIfElseProgram(t *testing.T) {
 	skipIfNoCC(t)
 
 	src := `
-fn max(a: u32, b: u32) -> u32 {
+fn larger(a: u32, b: u32) -> u32 {
     if a < b { return b }
     return a
 }
 fn main() -> unit {
-    let m = max(3, 7)
+    let m = larger(3, 7)
     return unit
 }
 `
@@ -338,7 +373,9 @@ func compileMulti(t *testing.T, dir, name string, srcs map[string]string) string
 	}
 
 	cc := findCC()
-	out, err := exec.Command(cc, "-o", binPath, cPath).CombinedOutput()
+	cmd2 := exec.Command(cc, "-o", binPath, cPath)
+	cmd2.Env = ccEnv(cc)
+	out, err := cmd2.CombinedOutput()
 	if err != nil {
 		t.Fatalf("CC failed:\n%s\n%v", out, err)
 	}
@@ -1855,13 +1892,13 @@ func TestLambdaInLoop(t *testing.T) {
 	skipIfNoCC(t)
 	src := `
 fn main() -> unit {
-	let double: fn(i64) -> i64 = fn(x: i64) -> i64 { return x * 2 }
+	let twice: fn(i64) -> i64 = fn(x: i64) -> i64 { return x * 2 }
 	let mut v: vec<i64> = vec_new()
 	vec_push(v, 1)
 	vec_push(v, 2)
 	vec_push(v, 3)
 	for x in v {
-		print_int(double(x))
+		print_int(twice(x))
 	}
 	return unit
 }
@@ -2009,7 +2046,8 @@ func TestVecLiteral(t *testing.T) {
 	src := `
 fn main() -> unit {
     let v: vec<i64> = [10, 20, 30]
-    print_int(vec_len(v))
+    let n: i64 = vec_len(v) as i64
+    print(int_to_str(n))
     return unit
 }
 `
@@ -2132,4 +2170,194 @@ func TestM9TypeckSource(t *testing.T) {
 
 func TestM55WasmStdSource(t *testing.T) {
 	checkSource(t, filepath.Join("..", "..", "src", "std", "wasm.cnd"))
+}
+
+// ── M9 bootstrap sources: full pipeline including emit_c + gcc ────────────────
+//
+// emitSource runs lex → parse → typeck → emit_c on a file from the src/ tree.
+// It asserts:
+//   1. All four stages succeed without error.
+//   2. The emitted C is non-empty.
+//   3. gcc compiles the emitted C to a binary without errors.
+//
+// This is the guardrail that was missing when the M9 source files were first
+// written — it catches emitter bugs that checkSource cannot see.
+func emitSource(t *testing.T, path string) {
+	t.Helper()
+	skipIfNoCC(t)
+
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	tokens, err := lexer.Tokenize(path, string(src))
+	if err != nil {
+		t.Fatalf("lex %s: %v", path, err)
+	}
+	file, err := parser.Parse(path, tokens)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	// Use CheckProgram (multi-file mode) so that module-qualified C names
+	// (e.g. typeck_Type instead of plain Type) match what the emitter produces.
+	// typeck.Check (single-file mode) registers structs with plain names, which
+	// disagrees with the emitter's module-aware moduleCName() prefix.
+	res, err := typeck.CheckProgram([]*parser.File{file})
+	if err != nil {
+		t.Fatalf("typeck %s: %v", path, err)
+	}
+	cSrc, err := emit_c.Emit(file, res)
+	if err != nil {
+		t.Fatalf("emit_c %s: %v", path, err)
+	}
+	if len(cSrc) == 0 {
+		t.Fatalf("emit_c %s: produced empty output", path)
+	}
+
+	// Write C to a temp file and compile it.
+	dir := t.TempDir()
+	base := filepath.Base(path)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	cPath := filepath.Join(dir, base+".c")
+	if err := os.WriteFile(cPath, []byte(cSrc), 0o644); err != nil {
+		t.Fatalf("write C: %v", err)
+	}
+
+	cc := findCC()
+	binPath := filepath.Join(dir, base)
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
+	// -c: compile only (no link) — the M9 sources are libraries, not executables.
+	ccCmd := exec.Command(cc, "-c", "-o", binPath+".o", cPath)
+	ccCmd.Env = ccEnv(cc)
+	out, err := ccCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcc failed on %s:\n%s\nEmitted C:\n%s", path, out, cSrc)
+	}
+}
+
+func TestM9LexerEmitC(t *testing.T) {
+	emitSource(t, filepath.Join("..", "..", "src", "compiler", "lexer.cnd"))
+}
+
+func TestM9ParserEmitC(t *testing.T) {
+	emitSource(t, filepath.Join("..", "..", "src", "compiler", "parser.cnd"))
+}
+
+func TestM9TypeckEmitC(t *testing.T) {
+	emitSource(t, filepath.Join("..", "..", "src", "compiler", "typeck.cnd"))
+}
+
+// bundleFileModuleName returns the module name declared in a file, or "" for root namespace.
+func bundleFileModuleName(f *parser.File) string {
+	for _, d := range f.Decls {
+		if md, ok := d.(*parser.ModuleDecl); ok {
+			return md.Name.Lexeme
+		}
+	}
+	return ""
+}
+
+// mergeFilesForTest combines declarations from multiple parsed files into one
+// synthetic File, inserting ModuleDecl boundary markers so the emitter can track
+// which module each declaration belongs to.  This mirrors mergeFiles in main.go.
+func mergeFilesForTest(name string, files []*parser.File) *parser.File {
+	var allDecls []parser.Decl
+	seen := map[string]bool{}
+	for _, f := range files {
+		mod := bundleFileModuleName(f)
+		allDecls = append(allDecls, &parser.ModuleDecl{Name: lexer.Token{Lexeme: mod}})
+		for _, d := range f.Decls {
+			var key string
+			switch dd := d.(type) {
+			case *parser.ModuleDecl:
+				continue
+			case *parser.UseDecl:
+				_ = dd
+				continue
+			case *parser.FnDecl:
+				key = "fn:" + mod + "." + dd.Name.Lexeme
+			case *parser.StructDecl:
+				key = "struct:" + mod + "." + dd.Name.Lexeme
+			case *parser.EnumDecl:
+				key = "enum:" + mod + "." + dd.Name.Lexeme
+			case *parser.ConstDecl:
+				key = "const:" + mod + "." + dd.Name.Lexeme
+			}
+			if key != "" && seen[key] {
+				continue
+			}
+			if key != "" {
+				seen[key] = true
+			}
+			allDecls = append(allDecls, d)
+		}
+	}
+	return &parser.File{Name: name, Decls: allDecls}
+}
+
+// emitBundle compiles multiple .cnd files together (as a merged bundle) through the
+// full pipeline.  Files must be given in dependency order.  All parsed ASTs are merged
+// into a single synthetic File (matching the cmdBuild mergeFiles approach) before
+// calling emit_c.Emit, producing a single well-ordered C translation unit.
+func emitBundle(t *testing.T, paths ...string) {
+	t.Helper()
+	skipIfNoCC(t)
+
+	var files []*parser.File
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		toks, err := lexer.Tokenize(path, string(src))
+		if err != nil {
+			t.Fatalf("lex %s: %v", path, err)
+		}
+		f, err := parser.Parse(path, toks)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		files = append(files, f)
+	}
+
+	res, err := typeck.CheckProgram(files)
+	if err != nil {
+		t.Fatalf("typeck bundle: %v", err)
+	}
+
+	merged := mergeFilesForTest("bundle", files)
+	cAll, err := emit_c.Emit(merged, res)
+	if err != nil {
+		t.Fatalf("emit_c bundle: %v", err)
+	}
+	if len(cAll) == 0 {
+		t.Fatal("emitBundle: produced empty output")
+	}
+
+	dir := t.TempDir()
+	cPath := filepath.Join(dir, "bundle.c")
+	if err := os.WriteFile(cPath, []byte(cAll), 0o644); err != nil {
+		t.Fatalf("write C: %v", err)
+	}
+
+	cc := findCC()
+	oPath := filepath.Join(dir, "bundle.o")
+	ccCmd := exec.Command(cc, "-c", "-o", oPath, cPath)
+	ccCmd.Env = ccEnv(cc)
+	out, err := ccCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcc failed on bundle:\n%s\nEmitted C (first 4000 chars):\n%.4000s", out, cAll)
+	}
+}
+
+func TestM9EmitCCndEmitC(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	emitBundle(t,
+		filepath.Join(srcDir, "lexer.cnd"),
+		filepath.Join(srcDir, "parser.cnd"),
+		filepath.Join(srcDir, "typeck.cnd"),
+		filepath.Join(srcDir, "emit_c.cnd"),
+	)
 }

@@ -106,6 +106,13 @@ type emitter struct {
 	// It holds the C variable name of the _CndTask_T* pointer so that
 	// return statements can store their value into _task->_result.
 	spawnTaskVar string
+
+	// namedFnTrampolines maps a Candor function name to its FnType for every
+	// named function used as a first-class value.  The emitter generates a
+	// thin C wrapper (trampoline) for each entry so the raw function pointer
+	// can be stored in a _cnd_fn_T_T closure struct whose ._fn field has an
+	// extra void* _env parameter.
+	namedFnTrampolines map[string]*typeck.FnType
 }
 
 func (e *emitter) freshTmp() string {
@@ -117,9 +124,83 @@ func (e *emitter) write(s string)              { e.sb.WriteString(s) }
 func (e *emitter) writef(f string, a ...any)   { fmt.Fprintf(&e.sb, f, a...) }
 func (e *emitter) writeln(s string)            { e.sb.WriteString(s); e.sb.WriteByte('\n') }
 
+// collectNamedFnTrampolines scans ExprTypes for IdentExpr nodes that refer to
+// user-defined named functions in a value context (FnType), and populates
+// e.namedFnTrampolines so trampoline wrappers can be emitted before use.
+// Only user-defined functions (declared in the file's AST) get trampolines;
+// builtins and extern functions are skipped because they are not real C symbols.
+func (e *emitter) collectNamedFnTrampolines(file *parser.File) {
+	// Build a set of user-declared function names from the file.
+	userFns := make(map[string]bool)
+	for _, decl := range file.Decls {
+		if fd, ok := decl.(*parser.FnDecl); ok {
+			userFns[fd.Name.Lexeme] = true
+		}
+	}
+	// Also include impl method names.
+	for _, impl := range e.res.ImplDecls {
+		for _, m := range impl.Methods {
+			userFns[impl.TypeName.Lexeme+"_"+m.Name.Lexeme] = true
+		}
+	}
+
+	e.namedFnTrampolines = make(map[string]*typeck.FnType)
+	for expr, typ := range e.res.ExprTypes {
+		ident, ok := expr.(*parser.IdentExpr)
+		if !ok {
+			continue
+		}
+		ft, isFn := typ.(*typeck.FnType)
+		if !isFn {
+			continue
+		}
+		name := ident.Tok.Lexeme
+		if userFns[name] {
+			e.namedFnTrampolines[name] = ft
+		}
+	}
+}
+
+// emitNamedFnTrampolines emits a thin C wrapper for each named function that
+// is used as a first-class value.  The wrapper adapts the raw `ret fn(params)`
+// signature to `ret fn(params..., void* _cnd_env)` expected by closure structs.
+func (e *emitter) emitNamedFnTrampolines() error {
+	for name, ft := range e.namedFnTrampolines {
+		ret, err := e.cType(ft.Ret)
+		if err != nil {
+			return err
+		}
+		var paramDecls []string
+		var paramNames []string
+		for i, p := range ft.Params {
+			ct, err := e.cType(p)
+			if err != nil {
+				return err
+			}
+			pName := fmt.Sprintf("_p%d", i)
+			paramDecls = append(paramDecls, ct+" "+pName)
+			paramNames = append(paramNames, pName)
+		}
+		paramDecls = append(paramDecls, "void* _cnd_env")
+		allParams := strings.Join(paramDecls, ", ")
+		callArgs := strings.Join(paramNames, ", ")
+		if ret == "void" {
+			e.writef("static void _cnd_tramp_%s(%s) { (void)_cnd_env; %s(%s); }\n",
+				name, allParams, name, callArgs)
+		} else {
+			e.writef("static %s _cnd_tramp_%s(%s) { (void)_cnd_env; return %s(%s); }\n",
+				ret, name, allParams, name, callArgs)
+		}
+	}
+	return nil
+}
+
 // ── file ─────────────────────────────────────────────────────────────────────
 
 func (e *emitter) emitFile(file *parser.File) error {
+	// Pre-pass: find all named functions used as first-class values.
+	e.collectNamedFnTrampolines(file)
+
 	e.writeln("#include <stdint.h>")
 	e.writeln("#include <stdio.h>")
 	e.writeln("#include <stdlib.h>")
@@ -326,6 +407,11 @@ func (e *emitter) emitFile(file *parser.File) error {
 	}
 	if hasFnDecls(file) || len(e.res.GenericInstances) > 0 {
 		e.writeln("")
+	}
+
+	// Emit trampolines for named functions used as first-class values.
+	if err := e.emitNamedFnTrampolines(); err != nil {
+		return err
 	}
 
 	// Emit lambda helper functions (before named functions so forward refs work).
@@ -2690,6 +2776,19 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 			sb.WriteString("(*")
 			sb.WriteString(name)
 			sb.WriteByte(')')
+		} else if ft, isFn := e.res.ExprTypes[ex].(*typeck.FnType); isFn {
+			// Named function used as a first-class value (e.g. passed as argument
+			// or returned).  Wrap via the trampoline so the C types match the
+			// closure struct's (params..., void* _env) signature.
+			if _, isNamedFn := e.res.FnSigs[name]; isNamedFn {
+				fnTypN, err := e.fnTypeName(ft)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(sb, "(%s){ ._fn = _cnd_tramp_%s, ._env = NULL }", fnTypN, name)
+			} else {
+				sb.WriteString(name)
+			}
 		} else {
 			sb.WriteString(name)
 		}
@@ -3100,8 +3199,15 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 				sb.WriteString("_f._env); }))")
 			}
 		} else {
-			if err := e.emitExpr(ex.Fn, sb); err != nil {
-				return err
+			// Direct (non-fat-ptr) call.  Emit the callee name directly — do NOT
+			// go through emitExpr for the callee because emitExpr would wrap a named
+			// function ident in a trampoline struct literal, which is not callable.
+			if ident, ok := ex.Fn.(*parser.IdentExpr); ok {
+				sb.WriteString(ident.Tok.Lexeme)
+			} else {
+				if err := e.emitExpr(ex.Fn, sb); err != nil {
+					return err
+				}
 			}
 			sb.WriteByte('(')
 			for i, arg := range ex.Args {
@@ -5442,7 +5548,27 @@ func (e *emitter) emitMustOrMatch(x parser.Expr, arms []parser.MustArm, bodyType
 		armType := e.res.ExprTypes[arm.Body]
 		// BlockExpr arms emit their statements directly into sb.
 		if blkArm, ok := arm.Body.(*parser.BlockExpr); ok {
-			for _, stmt := range blkArm.Stmts {
+			stmts := blkArm.Stmts
+			// When the match produces a non-unit value, the last statement in a
+			// block arm must assign its expression value to `res`.  Detect whether
+			// the tail statement is an ExprStmt so we can handle it specially.
+			tailIdx := -1
+			if bodyC != "" && len(stmts) > 0 {
+				if _, isTail := stmts[len(stmts)-1].(*parser.ExprStmt); isTail {
+					tailIdx = len(stmts) - 1
+				}
+			}
+			for i, stmt := range stmts {
+				if i == tailIdx {
+					// Emit the tail expression as `res = expr;`
+					tailExpr := stmt.(*parser.ExprStmt).X
+					var tailSB strings.Builder
+					if err := e.emitExpr(tailExpr, &tailSB); err != nil {
+						return err
+					}
+					fmt.Fprintf(sb, "        %s = %s;\n", res, tailSB.String())
+					continue
+				}
 				// emitStmt always writes to e.sb. We capture what it adds, then
 				// forward it to sb (which may be &e.sb itself when this match is
 				// emitted at statement level — so we must save both halves before
@@ -5462,7 +5588,6 @@ func (e *emitter) emitMustOrMatch(x parser.Expr, arms []parser.MustArm, bodyType
 				// it simply appends there.
 				fmt.Fprint(sb, stmtStr)
 			}
-			// BlockExpr arms yield unit; no result assignment needed.
 			_ = armType
 		} else {
 			// Skip unit-typed ident bodies (e.g. `ok(v) => v` when v:unit) — they have

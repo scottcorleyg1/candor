@@ -1699,14 +1699,33 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 		return c.inferPathExpr(e, sc)
 
 	case *parser.BlockExpr:
-		// Multi-statement match arm block — executes stmts, yields unit.
+		// Multi-statement match arm block.  The block yields the value of its
+		// last expression (if the last statement is a bare ExprStmt), otherwise unit.
 		inner := newScope(sc)
-		for _, stmt := range e.Stmts {
+		stmts := e.Stmts
+		// Check all but the last statement first (no hint propagation needed).
+		for _, stmt := range stmts[:max(0, len(stmts)-1)] {
 			if err := c.checkStmt(stmt, inner, hint); err != nil {
 				return nil, err
 			}
 		}
-		return c.record(e, TUnit), nil
+		var blockType Type = TUnit
+		if len(stmts) > 0 {
+			last := stmts[len(stmts)-1]
+			if es, ok := last.(*parser.ExprStmt); ok {
+				// Propagate the hint so result<T,E> arms unify correctly.
+				t, err := c.checkExpr(es.X, inner, hint)
+				if err != nil {
+					return nil, err
+				}
+				blockType = t
+			} else {
+				if err := c.checkStmt(last, inner, hint); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return c.record(e, blockType), nil
 
 	case *parser.LambdaExpr:
 		return c.inferLambdaExpr(e, sc)
