@@ -1,9 +1,7 @@
-## typeck.cnd — Candor type checker written in Candor  (M9.5)
+## typeck.cnd — Candor type checker written in Candor  (M9.8)
 ##
 ## Input:  ParsedFile (from parser.cnd)
 ## Output: result<TypedFile, str>
-
-module typeck
 ##
 ## Phased build — each phase verified before the next appends.
 ## Phase 1: type representation, type environment, type resolution.
@@ -28,21 +26,21 @@ fn TY_UNIT()    -> i64 pure { return 15 }
 
 ## ── type kind tags ────────────────────────────────────────────────────────────
 ## Named TYK_* (Type Kind) to avoid collision with lexer's TK_* (Token Kind).
-fn TK_PRIM()   -> i64 pure { return 1 }  ## i64, bool, str, ...
-fn TK_GEN()    -> i64 pure { return 2 }  ## vec<T>, option<T>, result<T,E>, ...
+fn TYK_PRIM()  -> i64 pure { return 1 }  ## i64, bool, str, ...
+fn TYK_GEN()   -> i64 pure { return 2 }  ## vec<T>, option<T>, result<T,E>, ...
 fn TYK_FN()    -> i64 pure { return 3 }  ## fn(A,B) -> R
-fn TK_NAMED()  -> i64 pure { return 4 }  ## user struct or enum (looked up by name)
-fn TK_VAR()    -> i64 pure { return 5 }  ## unresolved type variable (for generics)
+fn TYK_NAMED() -> i64 pure { return 4 }  ## user struct or enum (looked up by name)
+fn TYK_VAR()   -> i64 pure { return 5 }  ## unresolved type variable (for generics)
 fn TYK_NONE()  -> i64 pure { return 6 }  ## the bare `none` literal type
 
 ## ── Type ──────────────────────────────────────────────────────────────────────
 ## A single flat struct covering all type shapes.
-## kind == TK_PRIM   → prim field holds TY_* tag
-## kind == TK_GEN    → name = constructor ("vec","option","result","box",...)
-##                      params = type arguments
+## kind == TYK_PRIM  → prim field holds TY_* tag
+## kind == TYK_GEN   → name = constructor ("vec","option","result","box",...)
+##                     params = type arguments
 ## kind == TYK_FN    → params = param types, fn_ret = return type
-## kind == TK_NAMED  → name = struct/enum name
-## kind == TK_VAR    → name = type variable name
+## kind == TYK_NAMED → name = struct/enum name
+## kind == TYK_VAR   → name = type variable name
 ## kind == TYK_NONE  → the polymorphic none; coerces to option<T>
 
 struct Type {
@@ -55,16 +53,16 @@ struct Type {
 
 ## ── type constructors ─────────────────────────────────────────────────────────
 fn ty_prim(p: i64) -> Type {
-    let mut t = Type{ kind: TK_PRIM(), prim: p, name: "", params: vec_new(), fn_ret: none }
+    let mut t = Type{ kind: TYK_PRIM(), prim: p, name: "", params: vec_new(), fn_ret: none }
     return t
 }
 
 fn ty_named(name: str) -> Type {
-    return Type{ kind: TK_NAMED(), prim: 0, name: name, params: vec_new(), fn_ret: none }
+    return Type{ kind: TYK_NAMED(), prim: 0, name: name, params: vec_new(), fn_ret: none }
 }
 
 fn ty_var(name: str) -> Type {
-    return Type{ kind: TK_VAR(), prim: 0, name: name, params: vec_new(), fn_ret: none }
+    return Type{ kind: TYK_VAR(), prim: 0, name: name, params: vec_new(), fn_ret: none }
 }
 
 fn ty_none() -> Type {
@@ -72,7 +70,7 @@ fn ty_none() -> Type {
 }
 
 fn ty_gen(con: str, params: vec<Type>) -> Type {
-    return Type{ kind: TK_GEN(), prim: 0, name: con, params: params, fn_ret: none }
+    return Type{ kind: TYK_GEN(), prim: 0, name: con, params: params, fn_ret: none }
 }
 
 fn ty_gen1(con: str, p: Type) -> Type {
@@ -113,7 +111,7 @@ fn ty_unknown() -> Type pure { return ty_prim(TY_UNKNOWN()) }
 
 ## ── type display ──────────────────────────────────────────────────────────────
 fn ty_show(t: Type) -> str {
-    if t.kind == TK_PRIM() {
+    if t.kind == TYK_PRIM() {
         if t.prim == TY_I8()    { return "i8" }
         if t.prim == TY_I16()   { return "i16" }
         if t.prim == TY_I32()   { return "i32" }
@@ -131,10 +129,10 @@ fn ty_show(t: Type) -> str {
         if t.prim == TY_UNIT()  { return "unit" }
         return "unknown"
     }
-    if t.kind == TK_NAMED() { return t.name }
-    if t.kind == TK_VAR()   { return t.name }
+    if t.kind == TYK_NAMED() { return t.name }
+    if t.kind == TYK_VAR()   { return t.name }
     if t.kind == TYK_NONE()  { return "none" }
-    if t.kind == TK_GEN() {
+    if t.kind == TYK_GEN() {
         let n = vec_len(t.params) as i64
         if n == 0 { return t.name }
         let mut s = str_concat(t.name, "<")
@@ -170,11 +168,11 @@ fn ty_show(t: Type) -> str {
 ## ── type equality ─────────────────────────────────────────────────────────────
 fn ty_eq(a: Type, b: Type) -> bool {
     if a.kind != b.kind { return false }
-    if a.kind == TK_PRIM()  { return a.prim == b.prim }
-    if a.kind == TK_NAMED() { return str_eq(a.name, b.name) }
-    if a.kind == TK_VAR()   { return str_eq(a.name, b.name) }
+    if a.kind == TYK_PRIM()  { return a.prim == b.prim }
+    if a.kind == TYK_NAMED() { return str_eq(a.name, b.name) }
+    if a.kind == TYK_VAR()   { return str_eq(a.name, b.name) }
     if a.kind == TYK_NONE()  { return true }
-    if a.kind == TK_GEN() {
+    if a.kind == TYK_GEN() {
         if not str_eq(a.name, b.name) { return false }
         let na = vec_len(a.params) as i64
         let nb = vec_len(b.params) as i64
@@ -208,7 +206,7 @@ fn ty_eq(a: Type, b: Type) -> bool {
 fn ty_coerce(src: Type, dst: Type) -> bool {
     if ty_eq(src, dst) { return true }
     if src.kind == TYK_NONE() {
-        if dst.kind == TK_GEN() and str_eq(dst.name, "option") { return true }
+        if dst.kind == TYK_GEN() and str_eq(dst.name, "option") { return true }
     }
     return false
 }
@@ -361,21 +359,6 @@ fn lookup_prim(name: str) -> option<Type> {
     return none
 }
 
-## ── AST type definitions (mirrored from parser.cnd) ─────────────────────────
-## When the full compiler is linked these come from parser.cnd.
-## Redeclared here so typeck.cnd is independently typecheckable.
-
-struct GenTy   { name: str, args: vec<TypeExpr> }
-struct FnTy    { params: vec<TypeExpr>, ret: box<TypeExpr> }
-struct TupleTy { elems: vec<TypeExpr> }
-
-enum TypeExpr {
-    Named(str),
-    Generic(box<GenTy>),
-    FnType(box<FnTy>),
-    TupleType(box<TupleTy>),
-}
-
 ## ── type resolution helpers ───────────────────────────────────────────────────
 fn resolve_named(name: str, env: ref<TypeEnv>) -> result<Type, str> {
     let prim = lookup_prim(name) must {
@@ -445,98 +428,6 @@ struct TypedFile {
     errors:   vec<str>
     warnings: vec<str>
 }
-
-## ── Phase 2: declaration AST stubs + signature collection ───────────────────
-##
-## These types mirror parser.cnd declarations.
-## Stmt/Expr are one-variant stubs — bodies are not inspected until Phase 4.
-
-## ── body stubs / expression ADT ─────────────────────────────────────────────
-## Stmt (Phase 4) and Expr (Phase 3) are both fully expanded below.
-
-## ── statement helper structs ────────────────────────────────────────────────────────────────────────────────────
-struct LetStmt    { name: str, mut_: bool, typ: option<TypeExpr>, value: Expr }
-struct RetStmt    { value: Expr }
-struct IfElse     { cond: Expr, then_: vec<Stmt>, else_: option<vec<Stmt>> }
-struct LoopStmt   { body: vec<Stmt> }
-struct WhileStmt  { cond: Expr, body: vec<Stmt> }
-struct ForStmt    { name: str, iter: Expr, body: vec<Stmt> }
-struct AssignStmt { target: Expr, value: Expr }
-struct ExprStmt   { expr: Expr }
-struct AssertStmt { expr: Expr }
-
-enum Stmt {
-    Let(box<LetStmt>),
-    Ret(box<RetStmt>),
-    If(box<IfElse>),
-    Loop(box<LoopStmt>),
-    While(box<WhileStmt>),
-    For(box<ForStmt>),
-    Assign(box<AssignStmt>),
-    ExprS(box<ExprStmt>),
-    Assert(box<AssertStmt>),
-    Break,
-    Continue,
-}
-
-## Helper structs for recursive Expr variants.
-## box<Expr> is a heap pointer, avoiding infinite struct size.
-## Forward reference to Expr is safe: Pass 1 registers all names before
-## Pass 2 resolves field types.
-struct BinExpr   { op: str, left: box<Expr>, right: box<Expr> }
-struct UnExpr    { op: str, operand: box<Expr> }
-struct FldExpr   { obj: box<Expr>, field: str }
-struct CallArgs  { name: str, args: vec<Expr> }
-struct SLitField { name: str, val: box<Expr> }
-struct SLitExpr  { type_name: str, fields: vec<SLitField> }
-
-enum Expr {
-    IntLit(i64),
-    FloatLit(f64),
-    BoolLit(bool),
-    StrLit(str),
-    UnitLit,
-    Ident(str),
-    Bin(box<BinExpr>),
-    Un(box<UnExpr>),
-    Fld(box<FldExpr>),
-    Call(box<CallArgs>),
-    SLit(box<SLitExpr>),
-    SomeE(box<Expr>),
-    NoneE,
-    OkE(box<Expr>),
-    ErrE(box<Expr>),
-}
-
-## ── declaration node types (mirrored from parser.cnd) ───────────────────────
-struct Param           { name: str, typ: TypeExpr }
-struct StructFieldDecl { name: str, typ: TypeExpr }
-struct EnumVariant     { name: str, payload: option<TypeExpr> }
-
-struct FnDecl    { name: str, type_params: vec<str>, params: vec<Param>,
-                   ret: TypeExpr, pure_: bool, body: vec<Stmt>, line: i64 }
-struct StructDecl { name: str, type_params: vec<str>, fields: vec<StructFieldDecl>, line: i64 }
-struct EnumDecl   { name: str, type_params: vec<str>, variants: vec<EnumVariant>, line: i64 }
-struct ExternDecl { name: str, params: vec<Param>, ret: TypeExpr, line: i64 }
-struct ConstDecl  { name: str, typ: TypeExpr, value: Expr, line: i64 }
-
-## Minimal stubs for trait/impl — not processed in Phase 2
-struct TraitDecl { name: str }
-struct ImplDecl  { type_name: str }
-
-enum Decl {
-    FnD(box<FnDecl>),
-    StructD(box<StructDecl>),
-    EnumD(box<EnumDecl>),
-    ExternD(box<ExternDecl>),
-    ConstD(box<ConstDecl>),
-    TraitD(box<TraitDecl>),
-    ImplD(box<ImplDecl>),
-    ModuleD(str),
-    UseD(str),
-}
-
-struct ParsedFile { name: str, decls: vec<Decl> }
 
 ## ── helper: resolve a vec<Param> to vec<ParamSig> ───────────────────────────
 fn collect_params(params: vec<Param>, env: ref<TypeEnv>) -> result<vec<ParamSig>, str> {
@@ -781,7 +672,7 @@ fn collect_signatures(pf: ref<ParsedFile>, env: refmut<TypeEnv>) -> unit {
 ## ok_type(t) wraps a Type in result<Type, str> with a concrete error type,
 ## so match arms in infer_expr all have the same result type without ambiguity.
 
-## ── literal type sentinels ────────────────────────────────────────────────────────────────
+## ── literal type sentinels ────────────────────────────────────────────────────
 fn TY_INT_LIT()   -> i64 pure { return 16 }
 fn TY_FLOAT_LIT() -> i64 pure { return 17 }
 fn ty_int_lit()   -> Type pure { return ty_prim(TY_INT_LIT())   }
@@ -791,17 +682,17 @@ fn ty_float_lit() -> Type pure { return ty_prim(TY_FLOAT_LIT()) }
 fn ok_type(t: Type) -> result<Type, str> { return ok(t) }
 fn err_type(msg: str) -> result<Type, str> { return err(msg) }
 
-## ── numeric type predicates ────────────────────────────────────────────────────────────────
+## ── numeric type predicates ───────────────────────────────────────────────────
 fn ty_is_int_lit(t: Type) -> bool {
-    return t.kind == TK_PRIM() and t.prim == TY_INT_LIT()
+    return t.kind == TYK_PRIM() and t.prim == TY_INT_LIT()
 }
 
 fn ty_is_float_lit(t: Type) -> bool {
-    return t.kind == TK_PRIM() and t.prim == TY_FLOAT_LIT()
+    return t.kind == TYK_PRIM() and t.prim == TY_FLOAT_LIT()
 }
 
 fn ty_is_int(t: Type) -> bool {
-    if t.kind != TK_PRIM() { return false }
+    if t.kind != TYK_PRIM() { return false }
     if t.prim == TY_I8()      { return true }
     if t.prim == TY_I16()     { return true }
     if t.prim == TY_I32()     { return true }
@@ -817,7 +708,7 @@ fn ty_is_int(t: Type) -> bool {
 }
 
 fn ty_is_float(t: Type) -> bool {
-    if t.kind != TK_PRIM() { return false }
+    if t.kind != TYK_PRIM() { return false }
     if t.prim == TY_F32()       { return true }
     if t.prim == TY_F64()       { return true }
     if t.prim == TY_FLOAT_LIT() { return true }
@@ -829,10 +720,10 @@ fn ty_is_numeric(t: Type) -> bool {
 }
 
 fn ty_is_bool(t: Type) -> bool {
-    return t.kind == TK_PRIM() and t.prim == TY_BOOL()
+    return t.kind == TYK_PRIM() and t.prim == TY_BOOL()
 }
 
-## ── numeric unification ────────────────────────────────────────────────────────────────
+## ── numeric unification ───────────────────────────────────────────────────────
 fn ty_unify_numeric(a: Type, b: Type) -> result<Type, str> {
     if ty_eq(a, b) {
         if ty_is_numeric(a) { return ok_type(a) }
@@ -849,7 +740,7 @@ fn ty_unify_numeric(a: Type, b: Type) -> result<Type, str> {
     return err_type("type mismatch in arithmetic expression")
 }
 
-## ── binary operator type rules ─────────────────────────────────────────────────────────
+## ── binary operator type rules ────────────────────────────────────────────────
 fn infer_arith(a: Type, b: Type) -> result<Type, str> {
     return ty_unify_numeric(a, b)
 }
@@ -870,22 +761,22 @@ fn infer_logic(a: Type, b: Type) -> result<Type, str> {
     return err_type("expected bool operands for logical operator")
 }
 
-fn infer_binop_types(op: str, a: Type, b: Type) -> result<Type, str> {
-    if str_eq(op, "+") or str_eq(op, "-") or str_eq(op, "*") or
-       str_eq(op, "/") or str_eq(op, "%") {
+fn infer_binop_types(op: i64, a: Type, b: Type) -> result<Type, str> {
+    if op == OP_ADD() or op == OP_SUB() or op == OP_MUL() or
+       op == OP_DIV() or op == OP_MOD() {
         return infer_arith(a, b)
     }
-    if str_eq(op, "==") or str_eq(op, "!=") or str_eq(op, "<") or
-       str_eq(op, ">")  or str_eq(op, "<=") or str_eq(op, ">=") {
+    if op == OP_EQEQ() or op == OP_NEQ() or op == OP_LT() or
+       op == OP_GT()   or op == OP_LTEQ() or op == OP_GTEQ() {
         return infer_cmp(a, b)
     }
-    if str_eq(op, "and") or str_eq(op, "or") {
+    if op == OP_AND() or op == OP_OR() {
         return infer_logic(a, b)
     }
-    return err_type(str_concat("unknown binary operator: ", op))
+    return err_type("unknown binary operator")
 }
 
-## ── struct field lookup (takes StructDef by value) ───────────────────────────────────
+## ── struct field lookup (takes StructDef by value) ───────────────────────────
 fn find_field_in_struct(sd: StructDef, field: str, sname: str) -> result<Type, str> {
     let n = vec_len(sd.fields) as i64
     let mut i: i64 = 0
@@ -906,7 +797,7 @@ fn infer_field_access(sname: str, field: str, env: ref<TypeEnv>) -> result<Type,
     return find_field_in_struct(sd, field, sname)
 }
 
-## ── expression inference helpers ────────────────────────────────────────────────────────
+## ── expression inference helpers ─────────────────────────────────────────────
 fn infer_ident(name: str, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
     let t = scope_lookup(ss, name) must {
         some(t) => t
@@ -917,11 +808,11 @@ fn infer_ident(name: str, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type
 
 fn infer_binop(b: box<BinExpr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
     let be = box_deref(b)
-    let la = infer_expr(box_deref(be.left), ss, env) must {
+    let la = infer_expr(be.left, ss, env) must {
         ok(t)  => t
         err(e) => return err_type(e)
     }
-    let ra = infer_expr(box_deref(be.right), ss, env) must {
+    let ra = infer_expr(be.right, ss, env) must {
         ok(t)  => t
         err(e) => return err_type(e)
     }
@@ -930,43 +821,83 @@ fn infer_binop(b: box<BinExpr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> resul
 
 fn infer_unop(u: box<UnExpr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
     let ue = box_deref(u)
-    let t = infer_expr(box_deref(ue.operand), ss, env) must {
+    let t = infer_expr(ue.operand, ss, env) must {
         ok(t)  => t
         err(e) => return err_type(e)
     }
-    if str_eq(ue.op, "-") {
+    if ue.op == UOP_NEG() {
         if ty_is_numeric(t) { return ok_type(t) }
         return err_type("unary - requires a numeric type")
     }
-    if str_eq(ue.op, "not") {
+    if ue.op == UOP_NOT() {
         if ty_is_bool(t) { return ok_type(ty_bool()) }
         return err_type("not requires a bool operand")
     }
-    return err_type(str_concat("unknown unary operator: ", ue.op))
+    return err_type("unknown unary operator")
 }
 
-fn infer_fld(f: box<FldExpr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
+fn infer_fld(f: box<FieldExpr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
     let fe = box_deref(f)
-    let obj_t = infer_expr(box_deref(fe.obj), ss, env) must {
+    let obj_t = infer_expr(fe.receiver, ss, env) must {
         ok(t)  => t
         err(e) => return err_type(e)
     }
-    if obj_t.kind == TK_NAMED() {
+    if obj_t.kind == TYK_NAMED() {
         return infer_field_access(obj_t.name, fe.field, env)
     }
     return err_type("field access requires a struct type")
 }
 
-fn infer_call_fn(c: box<CallArgs>, env: ref<TypeEnv>) -> result<Type, str> {
+fn str_none() -> option<str> pure { return none }
+
+fn callee_name(e: Expr) -> option<str> {
+    match e {
+        Expr::Ident(name)  => some(name)
+        Expr::Path(a, b)   => some(str_concat(a, str_concat("::", b)))
+        Expr::Int(v)       => str_none()
+        Expr::Float(v)     => str_none()
+        Expr::Str(v)       => str_none()
+        Expr::Bool(v)      => str_none()
+        Expr::Unit         => str_none()
+        Expr::None         => str_none()
+        Expr::Binary(b)    => str_none()
+        Expr::Unary(u)     => str_none()
+        Expr::Field(f)     => str_none()
+        Expr::Call(c)      => str_none()
+        Expr::StructLit(s) => str_none()
+        Expr::SomeExpr(e)  => str_none()
+        Expr::OkExpr(e)    => str_none()
+        Expr::ErrExpr(e)   => str_none()
+        Expr::Cast(c)      => str_none()
+        Expr::Index(i)     => str_none()
+        Expr::VecLit(elems)   => str_none()
+        Expr::TupleLit(elems) => str_none()
+        Expr::AddrOf(e)    => str_none()
+        Expr::Lambda(l)    => str_none()
+        Expr::Block(b)     => str_none()
+        Expr::Match(m)     => str_none()
+        Expr::Must(m)      => str_none()
+        Expr::Return(e)    => str_none()
+        Expr::Break        => str_none()
+        Expr::Continue     => str_none()
+        Expr::OldExpr(e)   => str_none()
+    }
+}
+
+fn infer_call_fn(c: box<CallExpr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
     let ca = box_deref(c)
-    let sig = map_get(env.fns, ca.name) must {
+    let fn_name = callee_name(ca.callee) must {
+        some(n) => n
+        none    => return err_type("call expression callee must be a name")
+    }
+    let sig = map_get(env.fns, fn_name) must {
         some(s) => s
-        none    => return err_type(str_concat("unknown function: ", ca.name))
+        none    => return err_type(str_concat("unknown function: ", fn_name))
     }
     return ok_type(sig.ret)
 }
 
-fn infer_slit(s: box<SLitExpr>, env: ref<TypeEnv>) -> result<Type, str> {
+fn infer_slit(s: box<StructLitExpr>, env: ref<TypeEnv>) -> result<Type, str> {
     let se = box_deref(s)
     if map_contains(env.structs, se.type_name) {
         return ok_type(ty_named(se.type_name))
@@ -998,30 +929,44 @@ fn infer_err_expr(e: box<Expr>, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> resul
     return ok_type(ty_gen2("result", ty_unknown(), inner))
 }
 
-## ── infer_expr: main expression type inference entry point ──────────────────────
+## ── infer_expr: main expression type inference entry point ───────────────────
 ## All match arms return result<Type, str> via ok_type/err_type so the type
 ## checker can unify them without ambiguous type variables.
 fn infer_expr(expr: Expr, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type, str> {
     match expr {
-        Expr::IntLit(v)   => ok_type(ty_int_lit())
-        Expr::FloatLit(v) => ok_type(ty_float_lit())
-        Expr::BoolLit(v)  => ok_type(ty_bool())
-        Expr::StrLit(v)   => ok_type(ty_str())
-        Expr::UnitLit     => ok_type(ty_unit())
-        Expr::NoneE       => ok_type(ty_none())
-        Expr::Ident(name) => infer_ident(name, ss, env)
-        Expr::Bin(b)      => infer_binop(b, ss, env)
-        Expr::Un(u)       => infer_unop(u, ss, env)
-        Expr::Fld(f)      => infer_fld(f, ss, env)
-        Expr::Call(c)     => infer_call_fn(c, env)
-        Expr::SLit(s)     => infer_slit(s, env)
-        Expr::SomeE(e)    => infer_some(e, ss, env)
-        Expr::OkE(e)      => infer_ok_expr(e, ss, env)
-        Expr::ErrE(e)     => infer_err_expr(e, ss, env)
+        Expr::Int(v)          => ok_type(ty_int_lit())
+        Expr::Float(v)        => ok_type(ty_float_lit())
+        Expr::Bool(v)         => ok_type(ty_bool())
+        Expr::Str(v)          => ok_type(ty_str())
+        Expr::Unit            => ok_type(ty_unit())
+        Expr::None            => ok_type(ty_none())
+        Expr::Ident(name)     => infer_ident(name, ss, env)
+        Expr::Path(a, b)      => ok_type(ty_unknown())
+        Expr::Binary(b)       => infer_binop(b, ss, env)
+        Expr::Unary(u)        => infer_unop(u, ss, env)
+        Expr::Field(f)        => infer_fld(f, ss, env)
+        Expr::Call(c)         => infer_call_fn(c, ss, env)
+        Expr::StructLit(s)    => infer_slit(s, env)
+        Expr::SomeExpr(e)     => infer_some(e, ss, env)
+        Expr::OkExpr(e)       => infer_ok_expr(e, ss, env)
+        Expr::ErrExpr(e)      => infer_err_expr(e, ss, env)
+        Expr::Cast(c)         => ok_type(ty_unknown())
+        Expr::Index(i)        => ok_type(ty_unknown())
+        Expr::VecLit(elems)   => ok_type(ty_unknown())
+        Expr::TupleLit(elems) => ok_type(ty_unknown())
+        Expr::AddrOf(e)       => ok_type(ty_unknown())
+        Expr::Lambda(l)       => ok_type(ty_unknown())
+        Expr::Block(b)        => ok_type(ty_unknown())
+        Expr::Match(m)        => ok_type(ty_unknown())
+        Expr::Must(m)         => ok_type(ty_unknown())
+        Expr::Return(e)       => ok_type(ty_unit())
+        Expr::Break           => ok_type(ty_unit())
+        Expr::Continue        => ok_type(ty_unit())
+        Expr::OldExpr(e)      => ok_type(ty_unknown())
     }
 }
 
-## ── Phase 4: statement type checking ────────────────────────────────────────────────────────────────
+## ── Phase 4: statement type checking ─────────────────────────────────────────
 ##
 ## check_stmt accumulates errors into env (error-tolerant) so all statements
 ## in a function body are visited even when earlier ones fail.
@@ -1031,7 +976,7 @@ fn infer_expr(expr: Expr, ss: ref<ScopeStack>, env: ref<TypeEnv>) -> result<Type
 ##   resolve_or_unknown -- resolve TypeExpr, same fallback
 ##   ty_compat          -- assignment compatibility including lit coercions
 
-## ── error-accumulating inference helpers ────────────────────────────────────────────────────────────
+## ── error-accumulating inference helpers ─────────────────────────────────────
 fn infer_unknown_with_err(e: str, env: refmut<TypeEnv>) -> Type {
     env_error(env, e)
     return ty_unknown()
@@ -1056,9 +1001,9 @@ fn resolve_or_unknown(te: TypeExpr, env: refmut<TypeEnv>) -> Type {
     }
 }
 
-## ── type compatibility ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+## ── type compatibility ────────────────────────────────────────────────────────
 fn ty_is_unknown(t: Type) -> bool {
-    return t.kind == TK_PRIM() and t.prim == TY_UNKNOWN()
+    return t.kind == TYK_PRIM() and t.prim == TY_UNKNOWN()
 }
 
 fn ty_compat(src: Type, dst: Type) -> bool {
@@ -1071,19 +1016,19 @@ fn ty_compat(src: Type, dst: Type) -> bool {
     return false
 }
 
-## ── for-in iterator element type ──────────────────────────────────────────────────────────────────────────────────────────
+## ── for-in iterator element type ─────────────────────────────────────────────
 fn vec_elem_type(vt: Type) -> Type {
-    if vt.kind != TK_GEN()            { return ty_unknown() }
+    if vt.kind != TYK_GEN()           { return ty_unknown() }
     if not str_eq(vt.name, "vec")     { return ty_unknown() }
     if vec_len(vt.params) as i64 == 0 { return ty_unknown() }
     return vt.params[0]
 }
 
-## ── individual statement checkers ───────────────────────────────────────────────────────────────────────────────────────
+## ── individual statement checkers ────────────────────────────────────────────
 
 fn check_let(ls: box<LetStmt>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>) -> unit {
     let l = box_deref(ls)
-    let vt = infer_or_unknown(l.value, ss, env)
+    let vt = infer_or_unknown(l.init, ss, env)
     let declared_t = l.typ must {
         none     => vt
         some(te) => resolve_or_unknown(te, env)
@@ -1097,9 +1042,8 @@ fn check_let(ls: box<LetStmt>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>) -> 
     return unit
 }
 
-fn check_ret(rs: box<RetStmt>, ss: ref<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
-    let r = box_deref(rs)
-    let vt = infer_or_unknown(r.value, ss, env)
+fn check_ret(re: box<Expr>, ss: ref<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
+    let vt = infer_or_unknown(box_deref(re), ss, env)
     if not ty_compat(vt, ret_ty) {
         env_error(env, str_concat("return type mismatch: got ", str_concat(
             ty_show(vt), str_concat(", expected ", ty_show(ret_ty)))))
@@ -1125,7 +1069,14 @@ fn check_else_branch(stmts: vec<Stmt>, ss: refmut<ScopeStack>, env: refmut<TypeE
     return unit
 }
 
-fn check_if(is_: box<IfElse>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
+fn check_if_or_block(eib: IfOrBlock, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
+    match eib {
+        IfOrBlock::ElseIf(is_)    => check_if(is_, ss, env, ret_ty)
+        IfOrBlock::ElseBlock(els) => check_else_branch(els, ss, env, ret_ty)
+    }
+}
+
+fn check_if(is_: box<IfStmt>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
     let ifs = box_deref(is_)
     let ct = infer_or_unknown(ifs.cond, ss, env)
     if not ty_is_bool(ct) and not ty_is_unknown(ct) {
@@ -1135,16 +1086,15 @@ fn check_if(is_: box<IfElse>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_
     check_stmts(ifs.then_, ss, env, ret_ty)
     scope_pop(ss)
     ifs.else_ must {
-        some(els) => check_else_branch(els, ss, env, ret_ty)
         none      => unit
+        some(eib) => check_if_or_block(box_deref(eib), ss, env, ret_ty)
     }
     return unit
 }
 
-fn check_loop(ls: box<LoopStmt>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
-    let l = box_deref(ls)
+fn check_loop(body: vec<Stmt>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
     let _idx = scope_push(ss)
-    check_stmts(l.body, ss, env, ret_ty)
+    check_stmts(body, ss, env, ret_ty)
     scope_pop(ss)
     return unit
 }
@@ -1166,7 +1116,11 @@ fn check_for(fs: box<ForStmt>, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret
     let iter_t = infer_or_unknown(f.iter, ss, env)
     let elem_t = vec_elem_type(iter_t)
     let _idx = scope_push(ss)
-    scope_define(ss, f.name, elem_t)
+    scope_define(ss, f.key, elem_t)
+    f.val must {
+        none      => unit
+        some(val) => scope_define(ss, val, ty_unknown())
+    }
     check_stmts(f.body, ss, env, ret_ty)
     scope_pop(ss)
     return unit
@@ -1183,9 +1137,8 @@ fn check_assign(as_: box<AssignStmt>, ss: ref<ScopeStack>, env: refmut<TypeEnv>)
     return unit
 }
 
-fn check_expr_stmt(es: box<ExprStmt>, ss: ref<ScopeStack>, env: refmut<TypeEnv>) -> unit {
-    let e = box_deref(es)
-    let _t = infer_or_unknown(e.expr, ss, env)
+fn check_expr_stmt(e: box<Expr>, ss: ref<ScopeStack>, env: refmut<TypeEnv>) -> unit {
+    let _t = infer_or_unknown(box_deref(e), ss, env)
     return unit
 }
 
@@ -1201,21 +1154,22 @@ fn check_assert(as_: box<AssertStmt>, ss: ref<ScopeStack>, env: refmut<TypeEnv>)
 ## check_stmt: main dispatch
 fn check_stmt(stmt: Stmt, ss: refmut<ScopeStack>, env: refmut<TypeEnv>, ret_ty: Type) -> unit {
     match stmt {
-        Stmt::Let(ls)     => check_let(ls, ss, env)
-        Stmt::Ret(rs)     => check_ret(rs, ss, env, ret_ty)
-        Stmt::If(is_)     => check_if(is_, ss, env, ret_ty)
-        Stmt::Loop(ls)    => check_loop(ls, ss, env, ret_ty)
-        Stmt::While(ws)   => check_while(ws, ss, env, ret_ty)
-        Stmt::For(fs)     => check_for(fs, ss, env, ret_ty)
-        Stmt::Assign(a)   => check_assign(a, ss, env)
-        Stmt::ExprS(es)   => check_expr_stmt(es, ss, env)
-        Stmt::Assert(as_) => check_assert(as_, ss, env)
-        Stmt::Break       => unit
-        Stmt::Continue    => unit
+        Stmt::LetS(ls)      => check_let(ls, ss, env)
+        Stmt::LetTupS(lts)  => unit
+        Stmt::AssignS(a)    => check_assign(a, ss, env)
+        Stmt::IfS(is_)      => check_if(is_, ss, env, ret_ty)
+        Stmt::WhileS(ws)    => check_while(ws, ss, env, ret_ty)
+        Stmt::LoopS(body)   => check_loop(body, ss, env, ret_ty)
+        Stmt::ForS(fs)      => check_for(fs, ss, env, ret_ty)
+        Stmt::BreakS        => unit
+        Stmt::ContinueS     => unit
+        Stmt::ReturnS(re)   => check_ret(re, ss, env, ret_ty)
+        Stmt::AssertS(as_)  => check_assert(as_, ss, env)
+        Stmt::ExprS(e)      => check_expr_stmt(e, ss, env)
     }
 }
 
-## ── Phase 5: function body + file-level entry point ────────────────────────────────────────────────────────────
+## ── Phase 5: function body + file-level entry point ──────────────────────────
 ##
 ## check_fn_body: fresh scope, define params, check body statements.
 ## typecheck: public entry -- collect_signatures then check_bodies.

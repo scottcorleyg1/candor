@@ -4,5 +4,5 @@ version = "0.1.0"
 entry   = "main.cnd"
 
 [build]
-sources = ["main.cnd", "lexer.cnd", "parser.cnd", "emit_c.cnd"]
+sources = ["main.cnd", "lexer.cnd", "parser.cnd", "typeck.cnd", "emit_c.cnd"]
 output  = "../../candorc-stage1"
