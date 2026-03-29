@@ -232,12 +232,6 @@ type-checking pipeline. `TestM9TypeckSource` and `TestM9TypeckEmitC` pass.
 **Phase 4 ✓** Statement/declaration checking: all `Stmt` variants checked.
 **Phase 5 ✓** File-level entry point: `typecheck(pf: ref<ParsedFile>) -> TypedFile`.
 
-### M9.6 — Code generator written in Candor (C backend first)
-Start with C emission since the output is plain text and easy to debug.
-- A `str`-accumulator approach: build up C source as a `str` (or `vec<str>` lines)
-- Emit each AST node form as a C fragment
-- Write output via `std::io::write_file`
-
 ### M9.6 — Code generator written in Candor ✓ DONE
 `src/compiler/emit_c.cnd` provides the `emit_c` entry point used by `main.cnd`.
 
