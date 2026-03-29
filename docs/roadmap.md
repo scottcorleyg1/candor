@@ -240,14 +240,144 @@ type-checking pipeline. `TestM9TypeckSource` and `TestM9TypeckEmitC` pass.
 `lex → parse → typecheck → emit_c` runs in a binary compiled from Candor source.
 `go test ./...` is fully green.
 
-### M9.8 — Stage 2 bootstrap (self-hosting)
-Use `candorc-stage1` to compile itself:
+### M9.11 — Multi-source entry point in stage1
+
+`candorc-stage1` currently accepts a single `.cnd` file. Stage 2 requires it to
+compile a 5-file bundle. This milestone extends `main.cnd` to accept N source files:
+
 ```
-candorc-stage1 build src/compiler/ --output candorc-stage2
-diff <(candorc-stage1 compile test.cnd) <(candorc-stage2 compile test.cnd)
+candorc-stage1 lexer.cnd parser.cnd typeck.cnd emit_c.cnd main.cnd
 ```
-Identical output proves the compiler is self-consistent. The Go toolchain is no longer needed
-for day-to-day Candor development.
+
+- `os_args()` already works; loop over args 1..N, lex+parse each one
+- Bundle all parsed files: `typecheck(refmut(bundle))` on the merged program
+- Emit C for the merged bundle to stdout (same as today, just N files instead of 1)
+- `TestM9Stage1MultiSource` integration test: feed all 5 compiler sources, verify
+  non-empty C output with no type errors
+
+**Candor language change required**: none — all needed builtins already exist.
+
+---
+
+### M9.12 — `os_exec` builtin
+
+`candorc-stage1` needs to invoke the C compiler to produce a binary. This requires
+a new builtin:
+
+```candor
+fn os_exec(argv: vec<str>) -> result<i64, str> effects(sys)
+```
+
+Returns the process exit code on success, or an error string if the process could
+not be launched.
+
+**Go implementation**: emit a call to `_cnd_os_exec` which uses `execvp` / `CreateProcess`.
+**C runtime helper**: `static int64_t _cnd_os_exec(CandorVec* argv)` — standard
+`execvp` on Unix, `CreateProcessA` on Windows. Returns exit code.
+
+**Why not `spawn`?**: `task<T>` + `spawn` is async and uses `pthread_create`. Process
+exec is synchronous and cross-platform — a distinct builtin is cleaner.
+
+---
+
+### M9.13 — Candor.toml manifest reader in Candor
+
+A minimal TOML subset reader sufficient to parse `Candor.toml`:
+
+```candor
+struct BuildManifest {
+    name:    str
+    version: str
+    sources: vec<str>
+    output:  str
+}
+
+fn parse_manifest(src: str) -> result<BuildManifest, str>
+```
+
+Only the `[package]` and `[build]` sections need to be parsed. No full TOML library
+required — a line-oriented parser is sufficient for the format we use.
+
+Lives in `src/compiler/manifest.cnd`, added to `[build].sources`.
+
+---
+
+### M9.14 — `build` subcommand in stage1 main.cnd
+
+Wire together M9.11 + M9.12 + M9.13:
+
+```
+candorc-stage1 --build src/compiler/Candor.toml
+```
+
+```candor
+## main.cnd — updated entry point
+fn main() -> unit effects(io, sys) {
+    let args = os_args()
+    if args[1] == "--build" {
+        run_build(args[2])       ## path to Candor.toml
+    } else {
+        run_single(args[1])      ## original single-file mode
+    }
+    return unit
+}
+
+fn run_build(manifest_path: str) -> unit effects(io, sys) {
+    let src = read_file(manifest_path) must { ok(s) => s  err(e) => { ... } }
+    let m   = parse_manifest(src) must { ok(m) => m  err(e) => { ... } }
+    ## lex+parse each source relative to manifest directory
+    ## bundle + typecheck + emit C to temp file
+    ## os_exec(["gcc", "-o", m.output, tmp_c_path])
+}
+```
+
+**Definition of done**: `candorc-stage1 --build src/compiler/Candor.toml` produces
+a working `candorc-stage1-rebuilt` binary.
+
+---
+
+### M9.15 — Stage 2 self-hosting verification
+
+Use the rebuilt binary to compile itself and diff the outputs:
+
+```bash
+## Step 1: use candorc (Go) to build stage1
+candorc build src/compiler/Candor.toml --output candorc-stage1
+
+## Step 2: use stage1 to rebuild itself (stage2)
+./candorc-stage1 --build src/compiler/Candor.toml --output candorc-stage2
+
+## Step 3: use stage2 to rebuild itself (stage3)
+./candorc-stage2 --build src/compiler/Candor.toml --output candorc-stage3
+
+## Step 4: verify stage2 and stage3 produce identical C for test inputs
+diff <(./candorc-stage2 test.cnd) <(./candorc-stage3 test.cnd)
+```
+
+Identical stage2 vs stage3 output proves the compiler is self-consistent.
+The Go toolchain is no longer needed for day-to-day Candor development.
+
+**This is the full bootstrap milestone.** The Go compiler remains the *build host*
+(like GCC's C host), but Candor development can proceed entirely in Candor.
+
+---
+
+### Dependency graph
+
+```
+M9.11  Multi-source entry point   ──► M9.14 build subcommand ──► M9.15 stage2
+M9.12  os_exec builtin            ──► M9.14
+M9.13  manifest.cnd TOML reader   ──► M9.14
+```
+
+All three of M9.11, M9.12, M9.13 are independent and can land in any order.
+
+---
+
+### M9.8 — Stage 2 bootstrap (self-hosting) *(see M9.11–M9.15 above)*
+
+The original M9.8 goal is decomposed into the five milestones above. The end state
+is unchanged: `candorc-stage1` builds itself, the Go toolchain is optional.
 
 ---
 
@@ -641,7 +771,11 @@ Far   ──── M6.4   forall / exists runtime + solver
            M12.2  std/colstore.cnd — columnar batch storage
            M12.4  std/kvcache.cnd — radix-tree KV cache (arc<T> + NIXL)
 
-Goal  ──── M9.8   Stage 2 bootstrap (candorc-stage1 compiles itself)
+Next  ──── M9.11  Multi-source entry point in stage1
+           M9.12  os_exec builtin (invoke C compiler from Candor)
+           M9.13  manifest.cnd — Candor.toml reader in Candor
+           M9.14  build subcommand in stage1 main.cnd
+Goal  ──── M9.15  Stage 2 self-hosting (stage1 compiles itself, diff proves consistency)
 ```
 
 ---
