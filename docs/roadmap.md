@@ -49,6 +49,7 @@ The next goal is Stage 2: `candorc-stage1` compiling itself.
 | **M9.7 / M9.8 / M9.9** | **Stage 1 bootstrap pipeline complete**: (M9.7) `typeck.cnd` rewritten to bundle with `parser.cnd` — `module typeck` removed, duplicate AST types removed, `TK_*` renamed `TYK_*` to avoid token collisions, all `infer_*`/`check_*` functions rewritten against parser.cnd's actual types; (M9.8) `typecheck()` wired into `main.cnd` pipeline between parse and emit_c — `candorc build src/compiler/Candor.toml` produces a working `candorc-stage1` binary; (M9.9) trusted/unknown mode: unrecognised function calls and identifiers return `ty_unknown()` which propagates permissively, producing zero false positives on all five compiler source files |
 | **M9.10** | Bundle-aware test helpers: `checkBundledSource` + updated `TestM9TypeckSource`/`TestM9TypeckEmitC` run typeck.cnd with parser.cnd as a bundle so cross-file type references resolve correctly; `go test ./...` is fully green — zero failing tests |
 | **M9.11** | Multi-source entry point: `main.cnd` extended with `merge_files()` helper — accepts N `.cnd` files, lex+parses each, merges all declarations (dropping `ModuleD`/`UseD`), typechecks and emits the bundle; `TestM9MainCndSource` + `TestM9MainCndEmitC` verify the full 5-file compiler bundle compiles and passes gcc |
+| **M9.12** | `os_exec` builtin: `os_exec(argv: vec<str>) -> result<i64, str> effects(sys)`; C runtime helper `_cnd_os_exec` (fork+execvp+waitpid on Unix, `_spawnvp(_P_WAIT,...)` on Windows); `void*` parameter avoids ordering issue with vec type definitions; `<sys/wait.h>` added to Unix preamble, `<process.h>` to Windows; `TestOsExecEmit` passes; `go test ./...` fully green |
 | **M6.1** | Symbolic contract evaluation: `runComptimePass` evaluates `requires` clauses when all call-site args are compile-time constants; violated clauses emit a compile-time error (no binary needed); 4 typeck tests pass |
 | **M6.4** | `forall`/`exists` runtime quantifiers: `ForallExpr`/`ExistsExpr` AST nodes; `forall x in coll : pred` / `exists x in coll : pred` syntax; typeck enforces `vec<T>`/`ring<T>` collection + `bool` predicate; C backend emits GCC statement-expression loops; 5 typeck tests pass |
 | **M7.1** | `candorc mcp` subcommand + `#mcp_tool "desc"` directive: emits `tools.json` MCP manifest with name, description, and JSON Schema `inputSchema` derived from Candor parameter types |
@@ -257,24 +258,20 @@ candorc-stage1 lexer.cnd parser.cnd typeck.cnd emit_c.cnd main.cnd
 
 ---
 
-### M9.12 — `os_exec` builtin
-
-`candorc-stage1` needs to invoke the C compiler to produce a binary. This requires
-a new builtin:
+### M9.12 — `os_exec` builtin ✓ DONE
 
 ```candor
 fn os_exec(argv: vec<str>) -> result<i64, str> effects(sys)
 ```
 
-Returns the process exit code on success, or an error string if the process could
-not be launched.
-
-**Go implementation**: emit a call to `_cnd_os_exec` which uses `execvp` / `CreateProcess`.
-**C runtime helper**: `static int64_t _cnd_os_exec(CandorVec* argv)` — standard
-`execvp` on Unix, `CreateProcessA` on Windows. Returns exit code.
-
-**Why not `spawn`?**: `task<T>` + `spawn` is async and uses `pthread_create`. Process
-exec is synchronous and cross-platform — a distinct builtin is cleaner.
+- **typeck.go**: signature and `sys` effect registered
+- **emit_c.go**: call-site emitter wraps in statement expression with `ok`/`err` output params
+- **C helper** `_cnd_os_exec(void*, int* ok_out, const char** err_out)`:
+  - Unix: `fork()` + `execvp()` + `waitpid()` — returns WEXITSTATUS or 128+signal
+  - Windows: `_spawnvp(_P_WAIT, ...)` — returns exit code directly
+  - `void*` parameter emitted before vec type definitions — no ordering problem
+- `<sys/wait.h>` added to Unix preamble; `<process.h>` to Windows preamble
+- `TestOsExecEmit` passes; `go test ./...` fully green
 
 ---
 

@@ -837,6 +837,7 @@ var Builtins = map[string]*FnType{
 	"os_getenv": {Params: []Type{TStr}, Ret: &GenType{Con: "option", Params: []Type{TStr}}},
 	"os_exit":   {Params: []Type{TI64}, Ret: TUnit},
 	"os_cwd":    {Params: []Type{}, Ret: TStr},
+	"os_exec":   {Params: []Type{&GenType{Con: "vec", Params: []Type{TStr}}}, Ret: &GenType{Con: "result", Params: []Type{TI64, TStr}}},
 
 	// M2.5 std::time
 	"time_now_ms":      {Params: []Type{}, Ret: TI64},
@@ -921,6 +922,7 @@ var BuiltinEffects = map[string]*parser.EffectsAnnotation{
 	"os_getenv": {Kind: parser.EffectsDecl, Names: []string{"sys"}},
 	"os_exit":   {Kind: parser.EffectsDecl, Names: []string{"sys"}},
 	"os_cwd":    {Kind: parser.EffectsDecl, Names: []string{"sys"}},
+	"os_exec":   {Kind: parser.EffectsDecl, Names: []string{"sys"}},
 	// M2.5 time
 	"time_now_ms":      {Kind: parser.EffectsDecl, Names: []string{"time"}},
 	"time_now_mono_ns": {Kind: parser.EffectsDecl, Names: []string{"time"}},

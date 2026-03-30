@@ -938,6 +938,23 @@ fn main() -> unit {
 	assertContains(t, out, "exit(")
 }
 
+func TestOsExecEmit(t *testing.T) {
+	src := `
+fn main() -> unit effects(io, sys) {
+    let argv: vec<str> = vec_new()
+    vec_push(argv, "echo")
+    let r = os_exec(argv) must {
+        ok(code) => code
+        err(_e)  => return unit
+    }
+    print_int(r)
+    return unit
+}
+`
+	out := pipeline(t, src)
+	assertContains(t, out, "_cnd_os_exec(")
+}
+
 func TestTimeNowMsEmit(t *testing.T) {
 	src := `
 fn main() -> unit {

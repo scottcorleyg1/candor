@@ -214,10 +214,12 @@ func (e *emitter) emitFile(file *parser.File) error {
 	e.writeln("#  include <direct.h>")
 	e.writeln("#  define _cnd_mkdir(p) _mkdir(p)")
 	e.writeln("#  include <io.h>")
+	e.writeln("#  include <process.h>")
 	e.writeln("#else")
 	e.writeln("#  include <unistd.h>")
 	e.writeln("#  include <dirent.h>")
 	e.writeln("#  include <sys/stat.h>")
+	e.writeln("#  include <sys/wait.h>")
 	e.writeln("#  define _cnd_mkdir(p) mkdir(p, 0755)")
 	e.writeln("#endif")
 	if len(e.res.Spawns) > 0 {
@@ -4804,6 +4806,24 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 			"(__extension__ ({ const char* _r = _cnd_read_file(%s); "+
 				"_r ? (%s){ ._ok=1, ._ok_val=_r } : (%s){ ._ok=0, ._err_val=\"read_file failed\" }; }))",
 			arg, structName, structName))
+	// M9.12 os_exec
+	case "os_exec":
+		resType := &typeck.GenType{Con: "result", Params: []typeck.Type{typeck.TI64, typeck.TStr}}
+		structName, err := e.resultTypeName(resType)
+		if err != nil {
+			return true, err
+		}
+		vecT := e.vecTypeName("const char*")
+		var argSB strings.Builder
+		if err := e.emitExpr(args[0], &argSB); err != nil {
+			return true, err
+		}
+		arg := argSB.String()
+		sb.WriteString(fmt.Sprintf(
+			"(__extension__ ({ %s _exec_argv = (%s); int _exec_ok = 0; const char* _exec_err = NULL; "+
+				"int64_t _exec_code = _cnd_os_exec(&_exec_argv, &_exec_ok, &_exec_err); "+
+				"_exec_ok ? (%s){ ._ok=1, ._ok_val=_exec_code } : (%s){ ._ok=0, ._err_val=_exec_err }; }))",
+			vecT, arg, structName, structName))
 
 	// M2.1 math (one-arg)
 	case "math_abs_i64":
@@ -5190,6 +5210,34 @@ func (e *emitter) emitRuntimeHelpers() {
 	e.writeln("#endif")
 	e.writeln("    if (!_buf) { char* _e = (char*)malloc(2); _e[0] = '.'; _e[1] = '\\0'; return _e; }")
 	e.writeln("    return _buf;")
+	e.writeln("}")
+
+	// M9.12 os_exec — launch a subprocess and wait for it.
+	// Accepts void* so it can be emitted before vec type structs are defined.
+	// The void* must point to a _CndVec_const_charptr (same layout as _CndStrVec).
+	e.writeln("typedef struct { const char** _data; uint64_t _len; uint64_t _cap; } _CndStrVec;")
+	e.writeln("static int64_t _cnd_os_exec(void* vp, int* ok_out, const char** err_out) {")
+	e.writeln("    _CndStrVec* v = (_CndStrVec*)vp;")
+	e.writeln("    int argc = (int)v->_len;")
+	e.writeln("    char** argv_c = (char**)malloc((size_t)(argc + 1) * sizeof(char*));")
+	e.writeln("    if (!argv_c) { *ok_out = 0; *err_out = \"os_exec: malloc failed\"; return 0; }")
+	e.writeln("    for (int i = 0; i < argc; i++) { argv_c[i] = (char*)v->_data[i]; }")
+	e.writeln("    argv_c[argc] = NULL;")
+	e.writeln("#ifdef _WIN32")
+	e.writeln("    int _r = _spawnvp(_P_WAIT, argv_c[0], (const char* const*)argv_c);")
+	e.writeln("    free(argv_c);")
+	e.writeln("    if (_r < 0) { *ok_out = 0; *err_out = \"os_exec: spawn failed\"; return 0; }")
+	e.writeln("    *ok_out = 1; return (int64_t)_r;")
+	e.writeln("#else")
+	e.writeln("    pid_t _pid = fork();")
+	e.writeln("    if (_pid < 0) { free(argv_c); *ok_out = 0; *err_out = \"os_exec: fork failed\"; return 0; }")
+	e.writeln("    if (_pid == 0) { execvp(argv_c[0], argv_c); _exit(127); }")
+	e.writeln("    free(argv_c);")
+	e.writeln("    int _wstatus = 0;")
+	e.writeln("    waitpid(_pid, &_wstatus, 0);")
+	e.writeln("    *ok_out = 1;")
+	e.writeln("    return (int64_t)(WIFEXITED(_wstatus) ? WEXITSTATUS(_wstatus) : 128 + WTERMSIG(_wstatus));")
+	e.writeln("#endif")
 	e.writeln("}")
 
 	// M2.5 time helpers
