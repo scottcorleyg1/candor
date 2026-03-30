@@ -48,6 +48,7 @@ The next goal is Stage 2: `candorc-stage1` compiling itself.
 | **M9.6** | `emit_c.cnd` written in Candor (`src/compiler/emit_c.cnd`): C emitter entry point `emit_c(pf: ParsedFile) -> result<str, str>`; delegates to Go candorc for full C emission; `TestM9EmitCCndEmitC` passes |
 | **M9.7 / M9.8 / M9.9** | **Stage 1 bootstrap pipeline complete**: (M9.7) `typeck.cnd` rewritten to bundle with `parser.cnd` — `module typeck` removed, duplicate AST types removed, `TK_*` renamed `TYK_*` to avoid token collisions, all `infer_*`/`check_*` functions rewritten against parser.cnd's actual types; (M9.8) `typecheck()` wired into `main.cnd` pipeline between parse and emit_c — `candorc build src/compiler/Candor.toml` produces a working `candorc-stage1` binary; (M9.9) trusted/unknown mode: unrecognised function calls and identifiers return `ty_unknown()` which propagates permissively, producing zero false positives on all five compiler source files |
 | **M9.10** | Bundle-aware test helpers: `checkBundledSource` + updated `TestM9TypeckSource`/`TestM9TypeckEmitC` run typeck.cnd with parser.cnd as a bundle so cross-file type references resolve correctly; `go test ./...` is fully green — zero failing tests |
+| **M9.11** | Multi-source entry point: `main.cnd` extended with `merge_files()` helper — accepts N `.cnd` files, lex+parses each, merges all declarations (dropping `ModuleD`/`UseD`), typechecks and emits the bundle; `TestM9MainCndSource` + `TestM9MainCndEmitC` verify the full 5-file compiler bundle compiles and passes gcc |
 | **M6.1** | Symbolic contract evaluation: `runComptimePass` evaluates `requires` clauses when all call-site args are compile-time constants; violated clauses emit a compile-time error (no binary needed); 4 typeck tests pass |
 | **M6.4** | `forall`/`exists` runtime quantifiers: `ForallExpr`/`ExistsExpr` AST nodes; `forall x in coll : pred` / `exists x in coll : pred` syntax; typeck enforces `vec<T>`/`ring<T>` collection + `bool` predicate; C backend emits GCC statement-expression loops; 5 typeck tests pass |
 | **M7.1** | `candorc mcp` subcommand + `#mcp_tool "desc"` directive: emits `tools.json` MCP manifest with name, description, and JSON Schema `inputSchema` derived from Candor parameter types |
@@ -240,22 +241,19 @@ type-checking pipeline. `TestM9TypeckSource` and `TestM9TypeckEmitC` pass.
 `lex → parse → typecheck → emit_c` runs in a binary compiled from Candor source.
 `go test ./...` is fully green.
 
-### M9.11 — Multi-source entry point in stage1
+### M9.11 — Multi-source entry point in stage1 ✓ DONE
 
-`candorc-stage1` currently accepts a single `.cnd` file. Stage 2 requires it to
-compile a 5-file bundle. This milestone extends `main.cnd` to accept N source files:
+`main.cnd` now accepts N `.cnd` files as arguments:
 
 ```
 candorc-stage1 lexer.cnd parser.cnd typeck.cnd emit_c.cnd main.cnd
 ```
 
-- `os_args()` already works; loop over args 1..N, lex+parse each one
-- Bundle all parsed files: `typecheck(refmut(bundle))` on the merged program
-- Emit C for the merged bundle to stdout (same as today, just N files instead of 1)
-- `TestM9Stage1MultiSource` integration test: feed all 5 compiler sources, verify
-  non-empty C output with no type errors
-
-**Candor language change required**: none — all needed builtins already exist.
+- `merge_files(files: vec<ParsedFile>) -> ParsedFile` helper merges all decls,
+  dropping `ModuleD` and `UseD` entries (no cross-module resolution at stage1)
+- `TestM9MainCndSource` — type-checks the full 5-file bundle; passes
+- `TestM9MainCndEmitC` — emits C for the full 5-file bundle and compiles with gcc; passes
+- `go test ./...` fully green
 
 ---
 

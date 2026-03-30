@@ -1,9 +1,13 @@
-## main.cnd — candorc-stage1 entry point  (M9.9)
+## main.cnd — candorc-stage1 entry point  (M9.11)
 ##
-## Usage:  candorc-stage1 <source.cnd>
-##   Reads a Candor source file, runs lex→parse→typecheck→emit_c,
-##   and writes the resulting C source to stdout.
+## Usage:  candorc-stage1 <source1.cnd> [source2.cnd ...]
+##   Reads N Candor source files in dependency order, merges their
+##   declarations, runs lex→parse→typecheck→emit_c, and writes the
+##   resulting C source to stdout.
 ##   Pipe through gcc to get a native binary.
+##
+## Single file:   candorc-stage1 prog.cnd
+## Multi-file:    candorc-stage1 parser.cnd typeck.cnd emit_c.cnd main.cnd
 
 fn print_str_list(prefix: str, items: vec<str>) -> unit effects(io) {
     let n = vec_len(items) as i64
@@ -16,40 +20,82 @@ fn print_str_list(prefix: str, items: vec<str>) -> unit effects(io) {
     return unit
 }
 
+## merge_files — combine N ParsedFiles into one bundle.
+## ModuleD and UseD declarations are dropped (no cross-module resolution
+## at stage1; each file is assumed to export into the same namespace).
+fn merge_files(files: vec<ParsedFile>) -> ParsedFile {
+    let mut decls: vec<Decl> = vec_new()
+    let nfiles = vec_len(files) as i64
+    let mut fi: i64 = 0
+    loop {
+        if fi >= nfiles { break }
+        let pf = files[fi as u64]
+        let nd = vec_len(pf.decls) as i64
+        let mut di: i64 = 0
+        loop {
+            if di >= nd { break }
+            match pf.decls[di as u64] {
+                Decl::ModuleD(nm) => unit
+                Decl::UseD(nm)    => unit
+                Decl::FnD(fd)     => vec_push(decls, Decl::FnD(fd))
+                Decl::StructD(sd) => vec_push(decls, Decl::StructD(sd))
+                Decl::EnumD(ed)   => vec_push(decls, Decl::EnumD(ed))
+                Decl::ExternD(xd) => vec_push(decls, Decl::ExternD(xd))
+                Decl::ConstD(cd)  => vec_push(decls, Decl::ConstD(cd))
+                Decl::TraitD(td)  => vec_push(decls, Decl::TraitD(td))
+                Decl::ImplD(id)   => vec_push(decls, Decl::ImplD(id))
+            }
+            di = di + 1
+        }
+        fi = fi + 1
+    }
+    let name = files[0].name
+    return ParsedFile{ name: name, decls: decls }
+}
+
 fn main() -> unit effects(io, sys) {
     let args = os_args()
     let nargs = vec_len(args) as i64
 
     if nargs < 2 {
-        print_err("usage: candorc-stage1 <source.cnd>")
+        print_err("usage: candorc-stage1 <source.cnd> [source2.cnd ...]")
         return unit
     }
 
-    let path = args[1]
+    ## Lex and parse each file
+    let mut files: vec<ParsedFile> = vec_new()
+    let mut i: i64 = 1
+    loop {
+        if i >= nargs { break }
+        let path = args[i as u64]
 
-    ## Read source file
-    let src = read_file(path) must {
-        ok(s)  => s
-        err(e) => {
-            print_err(str_concat("candorc-stage1: error reading file: ", e))
-            return unit
+        let src = read_file(path) must {
+            ok(s)  => s
+            err(e) => {
+                print_err(str_concat("candorc-stage1: error reading file: ", e))
+                return unit
+            }
         }
+
+        let tokens = lex(src)
+
+        let pf = parse(tokens, path) must {
+            ok(p)  => p
+            err(e) => {
+                print_err(str_concat("candorc-stage1: parse error in ", str_concat(path, str_concat(": ", e))))
+                return unit
+            }
+        }
+
+        vec_push(files, pf)
+        i = i + 1
     }
 
-    ## Lex
-    let tokens = lex(src)
-
-    ## Parse
-    let pf = parse(tokens, path) must {
-        ok(p)  => p
-        err(e) => {
-            print_err(str_concat("candorc-stage1: parse error: ", e))
-            return unit
-        }
-    }
+    ## Merge all files into a single bundle
+    let mut bundle = merge_files(files)
 
     ## Type-check
-    let tf = typecheck(refmut(pf))
+    let tf = typecheck(refmut(bundle))
     print_str_list("candorc-stage1: warning: ", tf.warnings)
     if vec_len(tf.errors) as i64 > 0 {
         print_str_list("candorc-stage1: type error: ", tf.errors)
@@ -57,7 +103,7 @@ fn main() -> unit effects(io, sys) {
     }
 
     ## Emit C
-    let c_src = emit_c(pf) must {
+    let c_src = emit_c(bundle) must {
         ok(c)  => c
         err(e) => {
             print_err(str_concat("candorc-stage1: emit error: ", e))

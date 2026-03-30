@@ -2459,3 +2459,31 @@ func TestM9EmitCCndEmitC(t *testing.T) {
 		filepath.Join(srcDir, "emit_c.cnd"),
 	)
 }
+
+// ── M9.11: multi-source entry point — main.cnd added to the full bundle ───────
+
+// TestM9MainCndSource verifies that the complete stage1 compiler source bundle
+// (lexer + parser + typeck + emit_c + main) type-checks without errors.
+func TestM9MainCndSource(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	checkBundledSource(t,
+		filepath.Join(srcDir, "lexer.cnd"),
+		filepath.Join(srcDir, "parser.cnd"),
+		filepath.Join(srcDir, "typeck.cnd"),
+		filepath.Join(srcDir, "emit_c.cnd"),
+		filepath.Join(srcDir, "main.cnd"),
+	)
+}
+
+// TestM9MainCndEmitC verifies that the complete stage1 compiler source bundle
+// emits valid C that gcc can compile.
+func TestM9MainCndEmitC(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	emitBundle(t,
+		filepath.Join(srcDir, "lexer.cnd"),
+		filepath.Join(srcDir, "parser.cnd"),
+		filepath.Join(srcDir, "typeck.cnd"),
+		filepath.Join(srcDir, "emit_c.cnd"),
+		filepath.Join(srcDir, "main.cnd"),
+	)
+}
