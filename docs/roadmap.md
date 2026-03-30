@@ -50,6 +50,7 @@ The next goal is Stage 2: `candorc-stage1` compiling itself.
 | **M9.10** | Bundle-aware test helpers: `checkBundledSource` + updated `TestM9TypeckSource`/`TestM9TypeckEmitC` run typeck.cnd with parser.cnd as a bundle so cross-file type references resolve correctly; `go test ./...` is fully green — zero failing tests |
 | **M9.11** | Multi-source entry point: `main.cnd` extended with `merge_files()` helper — accepts N `.cnd` files, lex+parses each, merges all declarations (dropping `ModuleD`/`UseD`), typechecks and emits the bundle; `TestM9MainCndSource` + `TestM9MainCndEmitC` verify the full 5-file compiler bundle compiles and passes gcc |
 | **M9.12** | `os_exec` builtin: `os_exec(argv: vec<str>) -> result<i64, str> effects(sys)`; C runtime helper `_cnd_os_exec` (fork+execvp+waitpid on Unix, `_spawnvp(_P_WAIT,...)` on Windows); `void*` parameter avoids ordering issue with vec type definitions; `<sys/wait.h>` added to Unix preamble, `<process.h>` to Windows; `TestOsExecEmit` passes; `go test ./...` fully green |
+| **M9.13** | `manifest.cnd`: Candor.toml parser written in Candor — `BuildManifest` struct, `parse_manifest(src: str) -> result<BuildManifest, str>`; helpers `manifest_unquote`, `manifest_strip_comment`, `manifest_parse_array`; added to `Candor.toml` sources; `TestM9ManifestCndSource`, `TestM9ManifestCndEmitC`, `TestM9FullBundleSource`, `TestM9FullBundleEmitC` all pass |
 | **M6.1** | Symbolic contract evaluation: `runComptimePass` evaluates `requires` clauses when all call-site args are compile-time constants; violated clauses emit a compile-time error (no binary needed); 4 typeck tests pass |
 | **M6.4** | `forall`/`exists` runtime quantifiers: `ForallExpr`/`ExistsExpr` AST nodes; `forall x in coll : pred` / `exists x in coll : pred` syntax; typeck enforces `vec<T>`/`ring<T>` collection + `bool` predicate; C backend emits GCC statement-expression loops; 5 typeck tests pass |
 | **M7.1** | `candorc mcp` subcommand + `#mcp_tool "desc"` directive: emits `tools.json` MCP manifest with name, description, and JSON Schema `inputSchema` derived from Candor parameter types |
@@ -275,25 +276,15 @@ fn os_exec(argv: vec<str>) -> result<i64, str> effects(sys)
 
 ---
 
-### M9.13 — Candor.toml manifest reader in Candor
+### M9.13 — Candor.toml manifest reader in Candor ✓ DONE
 
-A minimal TOML subset reader sufficient to parse `Candor.toml`:
+`src/compiler/manifest.cnd` — line-oriented `Candor.toml` parser:
 
-```candor
-struct BuildManifest {
-    name:    str
-    version: str
-    sources: vec<str>
-    output:  str
-}
-
-fn parse_manifest(src: str) -> result<BuildManifest, str>
-```
-
-Only the `[package]` and `[build]` sections need to be parsed. No full TOML library
-required — a line-oriented parser is sufficient for the format we use.
-
-Lives in `src/compiler/manifest.cnd`, added to `[build].sources`.
+- `BuildManifest` struct: `name`, `version`, `entry`, `sources: vec<str>`, `output`
+- `parse_manifest(src: str) -> result<BuildManifest, str>` — splits on `\n`, detects `[section]` headers, parses `key = value` and `key = [...]` entries; returns `err(...)` if `[package] name` is missing
+- Helpers: `manifest_unquote`, `manifest_strip_comment`, `manifest_parse_array`
+- Added to `Candor.toml` `[build].sources`
+- `TestM9ManifestCndSource`, `TestM9ManifestCndEmitC`, `TestM9FullBundleSource`, `TestM9FullBundleEmitC` all pass
 
 ---
 

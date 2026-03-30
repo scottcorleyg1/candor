@@ -2487,3 +2487,46 @@ func TestM9MainCndEmitC(t *testing.T) {
 		filepath.Join(srcDir, "main.cnd"),
 	)
 }
+
+// ── M9.13: manifest.cnd — Candor.toml parser written in Candor ───────────────
+
+// TestM9ManifestCndSource verifies that manifest.cnd type-checks as a
+// standalone file (no cross-file dependencies).
+func TestM9ManifestCndSource(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	checkSource(t, filepath.Join(srcDir, "manifest.cnd"))
+}
+
+// TestM9ManifestCndEmitC verifies that manifest.cnd emits valid C that gcc
+// can compile.
+func TestM9ManifestCndEmitC(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	emitSource(t, filepath.Join(srcDir, "manifest.cnd"))
+}
+
+// TestM9FullBundleSource type-checks the full 6-file stage1 bundle
+// (lexer + parser + typeck + emit_c + main + manifest).
+func TestM9FullBundleSource(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	checkBundledSource(t,
+		filepath.Join(srcDir, "lexer.cnd"),
+		filepath.Join(srcDir, "parser.cnd"),
+		filepath.Join(srcDir, "typeck.cnd"),
+		filepath.Join(srcDir, "emit_c.cnd"),
+		filepath.Join(srcDir, "main.cnd"),
+		filepath.Join(srcDir, "manifest.cnd"),
+	)
+}
+
+// TestM9FullBundleEmitC emits and gcc-compiles the full 6-file stage1 bundle.
+func TestM9FullBundleEmitC(t *testing.T) {
+	srcDir := filepath.Join("..", "..", "src", "compiler")
+	emitBundle(t,
+		filepath.Join(srcDir, "lexer.cnd"),
+		filepath.Join(srcDir, "parser.cnd"),
+		filepath.Join(srcDir, "typeck.cnd"),
+		filepath.Join(srcDir, "emit_c.cnd"),
+		filepath.Join(srcDir, "main.cnd"),
+		filepath.Join(srcDir, "manifest.cnd"),
+	)
+}

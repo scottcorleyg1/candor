@@ -1,0 +1,127 @@
+## manifest.cnd — Candor.toml manifest parser written in Candor  (M9.13)
+##
+## Parses the minimal TOML subset used by Candor.toml:
+##
+##   [package]
+##   name    = "candorc-stage1"
+##   version = "0.1.0"
+##   entry   = "main.cnd"
+##
+##   [build]
+##   sources = ["main.cnd", "lexer.cnd", "parser.cnd", "typeck.cnd", "emit_c.cnd"]
+##   output  = "../../candorc-stage1"
+##
+## Entry point: parse_manifest(src: str) -> result<BuildManifest, str>
+
+struct BuildManifest {
+    name:    str
+    version: str
+    entry:   str
+    sources: vec<str>
+    output:  str
+}
+
+## ── unquote: strip surrounding double-quotes ─────────────────────────────────
+fn manifest_unquote(s: str) -> str {
+    let n = str_len(s)
+    if n >= 2 {
+        if str_starts_with(s, "\"") {
+            let last = str_substr(s, n - 1, 1)
+            if str_eq(last, "\"") {
+                return str_substr(s, 1, n - 2)
+            }
+        }
+    }
+    return s
+}
+
+## ── strip_comment: drop trailing " #..." ────────────────────────────────────
+fn manifest_strip_comment(s: str) -> str {
+    let idx = str_find(s, " #", 0) must {
+        some(i) => { return str_trim(str_substr(s, 0, i)) }
+        none    => unit
+    }
+    return s
+}
+
+## ── parse_string_array: ["a","b",...] → vec<str> ────────────────────────────
+fn manifest_parse_array(val: str) -> vec<str> {
+    let n = str_len(val)
+    if n < 2 { return vec_new() }
+    let inner = str_trim(str_substr(val, 1, n - 2))
+    let parts = str_split(inner, ",")
+    let mut out: vec<str> = vec_new()
+    let np = vec_len(parts) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= np { break }
+        let p = str_trim(parts[i as u64])
+        vec_push(out, manifest_unquote(p))
+        i = i + 1
+    }
+    return out
+}
+
+## ── parse_manifest ────────────────────────────────────────────────────────────
+fn parse_manifest(src: str) -> result<BuildManifest, str> {
+    let lines = str_split(src, "\n")
+    let n = vec_len(lines) as i64
+    let mut section: str = ""
+    let mut pkg_name: str = ""
+    let mut pkg_version: str = ""
+    let mut pkg_entry: str = ""
+    let mut bld_sources: vec<str> = vec_new()
+    let mut bld_output: str = ""
+
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let raw = lines[i as u64]
+        let line = str_trim(raw)
+        i = i + 1
+
+        ## only process non-empty, non-comment lines
+        if str_len(line) > 0 {
+            if !str_starts_with(line, "#") {
+
+                ## section header: [package] or [build]
+                if str_starts_with(line, "[") {
+                    let llen = str_len(line)
+                    let last = str_substr(line, llen - 1, 1)
+                    if str_eq(last, "]") {
+                        section = str_substr(line, 1, llen - 2)
+                    }
+                }
+
+                ## key = value
+                if !str_starts_with(line, "[") {
+                    let eq_opt = str_find(line, "=", 0)
+                    match eq_opt {
+                        some(eq_idx) => {
+                            let key = str_trim(str_substr(line, 0, eq_idx))
+                            let rest = str_substr(line, eq_idx + 1, str_len(line) - eq_idx - 1)
+                            let val = manifest_strip_comment(str_trim(rest))
+                            if str_eq(section, "package") {
+                                if str_eq(key, "name")    { pkg_name    = manifest_unquote(val) }
+                                if str_eq(key, "version") { pkg_version = manifest_unquote(val) }
+                                if str_eq(key, "entry")   { pkg_entry   = manifest_unquote(val) }
+                            }
+                            if str_eq(section, "build") {
+                                if str_eq(key, "output")  { bld_output  = manifest_unquote(val) }
+                                if str_eq(key, "sources") { bld_sources = manifest_parse_array(val) }
+                            }
+                        }
+                        none => unit
+                    }
+                }
+
+            }
+        }
+    }
+
+    if str_len(pkg_name) == 0 {
+        return err("[package] name is required in Candor.toml")
+    }
+    let m = BuildManifest{ name: pkg_name, version: pkg_version, entry: pkg_entry, sources: bld_sources, output: bld_output }
+    return ok(m)
+}
