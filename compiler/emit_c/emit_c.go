@@ -4455,6 +4455,16 @@ func (e *emitter) emitBuiltinCall(name string, args []parser.Expr, sb *strings.B
 	// Two-argument string builtins.
 	if len(args) == 2 {
 		switch name {
+		case "str_byte":
+			var s0, s1 strings.Builder
+			if err := e.emitExpr(args[0], &s0); err != nil {
+				return true, err
+			}
+			if err := e.emitExpr(args[1], &s1); err != nil {
+				return true, err
+			}
+			sb.WriteString(fmt.Sprintf("(uint8_t)((%s)[%s])", s0.String(), s1.String()))
+			return true, nil
 		case "str_concat":
 			sb.WriteString("_cnd_str_concat(")
 			if err := e.emitExpr(args[0], sb); err != nil {

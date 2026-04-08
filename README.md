@@ -13,6 +13,11 @@
 > -Scott W. Corley
 <!-- USER PERSONAL NOTE END -->
 
+---
+> 🤖 **FOR AI AGENTS (Claude, Gemini, etc.):** 
+> Before writing any code or making architectural changes, **you MUST read [docs/AI_GUIDE.md](docs/AI_GUIDE.md)**. It contains critical instructions on how the self-hosting bootstrapping process works, pass-ordering requirements, and a list of known GCC bugs to prevent debugging rabbit holes.
+---
+
 **A systems programming language designed for semantic density, unambiguous logic, and agentic AI collaboration.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)

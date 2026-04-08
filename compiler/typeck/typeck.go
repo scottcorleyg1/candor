@@ -791,6 +791,7 @@ var Builtins = map[string]*FnType{
 	"str_eq":          {Params: []Type{TStr, TStr}, Ret: TBool},
 	"str_starts_with": {Params: []Type{TStr, TStr}, Ret: TBool},
 	"str_find":        {Params: []Type{TStr, TStr, TI64}, Ret: &GenType{Con: "option", Params: []Type{TI64}}},
+	"str_byte":        {Params: []Type{TStr, TI64}, Ret: TU8},
 	"str_from_u8":     {Params: []Type{TU8}, Ret: TStr},
 	"str_substr":      {Params: []Type{TStr, TI64, TI64}, Ret: TStr},
 	"int_to_str": {Params: []Type{TI64}, Ret: TStr},

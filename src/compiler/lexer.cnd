@@ -154,16 +154,16 @@ fn lex_at_end(l: ref<Lexer>) -> bool {
 
 fn lex_peek(l: ref<Lexer>) -> u8 {
     if l.pos >= l.src_len { return 0 }
-    return l.src[l.pos]
+    return str_byte(l.src, l.pos)
 }
 
 fn lex_peek2(l: ref<Lexer>) -> u8 {
     if l.pos + 1 >= l.src_len { return 0 }
-    return l.src[l.pos + 1]
+    return str_byte(l.src, l.pos + 1)
 }
 
 fn lex_advance(l: refmut<Lexer>) -> u8 {
-    let c = l.src[l.pos]
+    let c = str_byte(l.src, l.pos)
     l.pos = l.pos + 1
     if c == 10 { l.line = l.line + 1 }
     return c

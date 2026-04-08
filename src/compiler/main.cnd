@@ -24,8 +24,23 @@ fn print_str_list(prefix: str, items: vec<str>) -> unit effects(io) {
 ## merge_files — combine N ParsedFiles into one bundle.
 ## ModuleD and UseD declarations are dropped (no cross-module resolution
 ## at stage1; each file is assumed to export into the same namespace).
+## Check if a name is already in a seen-names list.
+fn merge_seen(seen: vec<str>, name: str) -> bool {
+    let n = vec_len(seen) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        if str_eq(seen[i as u64], name) { return true }
+        i = i + 1
+    }
+    return false
+}
+
 fn merge_files(files: vec<ParsedFile>) -> ParsedFile {
     let mut decls: vec<Decl> = vec_new()
+    ## Track seen names to deduplicate fn/struct/enum/const across files.
+    let mut seen_fns: vec<str> = vec_new()
+    let mut seen_types: vec<str> = vec_new()
     let nfiles = vec_len(files) as i64
     let mut fi: i64 = 0
     loop {
@@ -38,9 +53,27 @@ fn merge_files(files: vec<ParsedFile>) -> ParsedFile {
             match pf.decls[di as u64] {
                 Decl::ModuleD(nm) => unit
                 Decl::UseD(nm)    => unit
-                Decl::FnD(fd)     => vec_push(decls, Decl::FnD(fd))
-                Decl::StructD(sd) => vec_push(decls, Decl::StructD(sd))
-                Decl::EnumD(ed)   => vec_push(decls, Decl::EnumD(ed))
+                Decl::FnD(fd)     => {
+                    let fname = box_deref(fd).name
+                    if not merge_seen(seen_fns, fname) {
+                        vec_push(seen_fns, fname)
+                        vec_push(decls, Decl::FnD(fd))
+                    }
+                }
+                Decl::StructD(sd) => {
+                    let sname = box_deref(sd).name
+                    if not merge_seen(seen_types, sname) {
+                        vec_push(seen_types, sname)
+                        vec_push(decls, Decl::StructD(sd))
+                    }
+                }
+                Decl::EnumD(ed)   => {
+                    let ename = box_deref(ed).name
+                    if not merge_seen(seen_types, ename) {
+                        vec_push(seen_types, ename)
+                        vec_push(decls, Decl::EnumD(ed))
+                    }
+                }
                 Decl::ExternD(xd) => vec_push(decls, Decl::ExternD(xd))
                 Decl::ConstD(cd)  => vec_push(decls, Decl::ConstD(cd))
                 Decl::TraitD(td)  => vec_push(decls, Decl::TraitD(td))
@@ -176,8 +209,10 @@ fn run_build(manifest_path: str) -> unit effects(io, sys) {
     if str_len(cc) == 0 { cc = "gcc" }
 
     ## Invoke gcc to produce the binary
+    ## Pass -I<manifest_dir> so gcc can find _cnd_runtime.h next to the sources.
     let mut gcc_args: vec<str> = vec_new()
     vec_push(gcc_args, cc)
+    vec_push(gcc_args, str_concat("-I", manifest_dir))
     vec_push(gcc_args, "-o")
     vec_push(gcc_args, out_bin)
     vec_push(gcc_args, c_path)
