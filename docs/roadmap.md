@@ -62,6 +62,7 @@ The next goal is Stage 2: `candorc-stage1` compiling itself.
 | **M9.14–9.15** | match/must emission fixes, PathBind segfault fix in Go compiler | 2026-04-02 |
 | **M9.16–9.17** | emit_c.cnd: scope tracking, box builtins, forward decls, index, vec ordering, match/must fixes | 2026-04-04 |
 | **M9.18** | **Stage 2 self-hosting**: `stage3.exe` (GCC-compiled from Candor-emitted C) successfully compiles all 6 Candor compiler source files — exits 0, 11,616 lines. Three root-cause fixes in `emit_c.cnd`: (1) `arm_is_terminal_blk` over-firing on side-effect blocks causing double-push in merge_files; (2) `emit_block_expr` discarding implicit tail ExprS as void; (3) `arm_is_terminal` recursion into Match/Must expressions. | 2026-04-08 |
+| **M9.19** | **Full bootstrap idempotency**: stage4.c == stage2.c (0 diff lines). stage4.exe compiles (0 GCC errors) and produces identical output. Root cause of final divergence: catchall terminal arms (`_ => return none`) in `emit_match_expr` were emitted as always-true if-blocks that shadowed all subsequent value arms — causing `stmt_to_expr` to always return NULL, making all implicit tail returns emit as `(void)(expr)`. Fix: `arm_cond_is_catchall` helper + catchall terminals moved to ternary else position in `emit_match_expr`/`emit_must_expr`. Candor is now fully self-hosting. | 2026-04-09 |
 
 ### Known language gaps (not yet wired)
 - Named-return / early-exit in closures

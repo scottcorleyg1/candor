@@ -32,13 +32,13 @@ src/compiler/*.cnd
   → gcc -std=gnu23 -O0 -o /d/tmp/stage3.exe stage2.c      ← 0 errors ✅
   → /d/tmp/stage3.exe [.cnd files] > /d/tmp/stage4.c      ← EXIT 0, 11,616 lines ✅ ← M9.18 ACHIEVED
 
-./stage4.c → gcc -std=gnu23 → stage4.exe                  ← 1 GCC error ❌ (TASK-10)
-diff stage2.c stage4.c                                     ← ~150 line diff, void-suffix pattern
+./stage4.c → gcc -std=gnu23 → stage4.exe                  ← 0 errors ✅ ← M9.19 ACHIEVED
+diff stage2.c stage4.c                                     ← 0 diff lines ✅ IDEMPOTENT
 ```
 
 **MILESTONE M9.18 ACHIEVED 2026-04-08:** `stage3.exe` successfully compiles the full Candor compiler source and exits 0. Stage 2 self-hosting is working.
 
-**Remaining gap (TASK-10):** stage4.c has 1 GCC error — `emit_count` initialized from void expression. Root cause: `emit_fn_body` void-suffix string check fires incorrectly on a match initializer. Fix: replace suffix-string heuristic with AST-level terminal check.
+**MILESTONE M9.19 ACHIEVED 2026-04-09:** stage4.c == stage2.c (0 diff lines). Full bootstrap idempotency proven. Candor is fully self-hosting.
 
 **Source file order (always this order):**
 ```
@@ -66,26 +66,20 @@ Result: `stage3.exe` runs, exits 0, produces 11,616 lines. **M9.18 achieved.**
 
 ---
 
-### TASK-10 — stage4.c: 1 GCC error, void-suffix divergence
+### TASK-10 — stage4.c idempotency — CLOSED ✅
 **Opened: 2026-04-08 22:00 MDT**  
-**Owner:** Unassigned  
-**Status:** Open
+**Closed: 2026-04-09 ~00:30 MDT**  
+**Root cause documented:** `known_compiler_bugs.md` Bug 10.
 
-**Symptom:**
-```
-D:/tmp/stage4_compile.c:9059:28: error: void value not ignored as it ought to be
-int64_t emit_count = (void)(...)   ← emit_count gets a void initializer
-```
-stage4.c also has ~150 lines where `return (ext_stmt)` becomes `(void)(ext_stmt)` vs stage2.c.
+**Actual root cause (deeper than originally documented):**
+`stmt_to_expr` always returned NULL — not because of `emit_fn_body`'s void-suffix check, but because the `_ => return none` catchall terminal arm was emitted as `if (1 /*bind*/) { return NULL; }` BEFORE the `Stmt::ExprS` value arm in the C ternary. The always-true condition shadowed the ExprS arm completely. This caused `emit_fn_body` to never take the `some(e_node)` branch — every function tail was emitted as `(void)(expr)` via `emit_expr_stmt`.
 
-**Root cause:**
-`emit_fn_body` uses a string-suffix check `ends with "((void)0);\n}))"` to decide `return` vs `(void)`. For the new `emit_block_expr` function's `emit_count` initializer (a match expression), stage3.exe still produces a void-suffix terminal pattern on the outer match even though it's a value expression. The suffix check can't see the AST — it checks the emitted string.
+**Fix in `emit_c.cnd`:**
+- Added `arm_cond_is_catchall` helper
+- Changed `emit_match_expr` and `emit_must_expr` to exclude catchall terminal arms from the early if-block phase
+- Catchall terminals now emit as the final else of the ternary: `(__extension__({ terminal_body; (void*)0; }))`
 
-**Fix:** Replace the string-suffix heuristic in `emit_fn_body` with an AST-level terminal check. Before calling `emit_expr(e_node, pp, rc)`, check `arm_is_terminal(e_node)` to decide `return` vs `(void)`. This removes the string-suffix check entirely.
-
-**Impact when fixed:** stage4.c will be byte-for-byte identical to stage2.c (full idempotency). That proves the bootstrap is complete.
-
-> Claude (2026-04-08 22:00 MDT): This is a single focused fix — `emit_fn_body` around line 1153 in emit_c.cnd. The check `is_void = str_substr(e_str, ...)` should become `is_void = arm_is_terminal(e_node)` or similar. Should close in under 10 tool calls if docs are read first.
+**Result:** stage4.c == stage2.c (0 diff lines). stage4.exe compiles (0 GCC errors). **M9.19 achieved.**
 
 ---
 

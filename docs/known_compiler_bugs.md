@@ -130,14 +130,34 @@ When `final_expr=none`, peel the last stmt if it is an `ExprS` and treat it as t
 
 ---
 
-## Bug 9 — Remaining void-suffix divergence in stage4.c (1 GCC error)
+## Bug 9 — Remaining void-suffix divergence in stage4.c (~150 lines, 1 GCC error)
 **First observed: 2026-04-08 ~21:45 MDT**  
-**Status: Open — TASK-10**
+**Fixed: 2026-04-09 — TASK-10 closed. See Bug 10.**
 
-**Symptoms:**
-stage4.c (emitted by stage3.exe) has ~150 lines where `return (__extension__({...}))` in stage2.c becomes `(void)((__extension__({...})))`, giving 1 GCC error on `emit_count` initialization.
+Root cause was `stmt_to_expr` always returning NULL. See Bug 10 for full analysis.
+
+---
+
+## Bug 10 — `stmt_to_expr` always returned NULL: catchall terminal arm shadowed value arm
+**First observed: 2026-04-09 ~00:00 MDT**  
+**Fixed: 2026-04-09 — M9.19 achieved**
 
 **Root cause:**
-`emit_fn_body` uses a brittle string-suffix check (`ends with "((void)0);\n}))"`) to decide whether to emit `return expr` or `(void)(expr)`. This check fires on the new `emit_block_expr` function's initialization of `emit_count`, whose initializer is a match expression that stage3.exe still marks as void-suffix-terminated (the none arm block ends in a nested match whose inner block ends in ExprS — the recursion doesn't propagate the non-void signal back through the suffix string by the time `emit_fn_body` checks it).
+`emit_match_expr` emits terminal arms as `if (cond) { ... }` blocks BEFORE the ternary for value arms. The `_ => return none` arm in `stmt_to_expr` has `arm_cond = "1 /*bind*/"` (always-true), so its if-block `if (1) { return NULL; }` fires unconditionally before the ExprS value arm is ever evaluated. Result: `stmt_to_expr` always returned NULL in stage3, so `emit_fn_body` never took the `some(e_node)` branch — all function tail expressions were emitted via `emit_expr_stmt` as `(void)(expr)` instead of `return expr`.
 
-**The permanent fix:** Replace the suffix-string heuristic in `emit_fn_body` with a proper AST-level `arm_is_terminal` call before emitting. The suffix check was a workaround for not having access to the AST at that point — but the AST is available via the `Expr` node passed to `emit_expr`. Track as TASK-10.
+**Pattern that triggers the bug:**
+```candor
+match s {
+    Stmt::ExprS(es) => some(box_deref(es))  // value arm
+    _               => return none           // catchall terminal (always-true cond)
+}
+```
+
+Emitted in stage2.c as: `if (1 /*bind*/) { return NULL; }  /* ExprS arm dead */`
+
+**Fix (`src/compiler/emit_c.cnd`):**
+1. Added `arm_cond_is_catchall(pat)` helper — returns true when `arm_cond` produces `"1 /*bind*/"` or `"1 /*default*/"`.
+2. In `emit_match_expr` and `emit_must_expr`: changed `any_terminal` detection to exclude catchall terminal arms. Catchall terminals are handled separately as the final else of the ternary value chain (wrapped in `(__extension__({ terminal_body; (void*)0; }))`).
+3. `(void*)0` is used as the dummy value (not `((void)0)`) to avoid ternary type mismatch — all catchall terminal arms in Candor source return pointer types.
+
+**Impact:** Fixed all ~75 functions whose bodies were pure-value match/must expressions. `stmt_to_expr` now correctly returns `some(es)` for ExprS stmts. `emit_fn_body` correctly emits `return expr;` for all function tails. stage4.c == stage2.c (0 diff lines). M9.19 — full bootstrap idempotency achieved.

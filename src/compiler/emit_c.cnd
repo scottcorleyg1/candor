@@ -779,6 +779,14 @@ fn bool_to_c_cond(b: bool) -> str {
     return "!_m"
 }
 
+## True if arm_cond would return an always-true condition ("1 /*bind*/" or "1 /*default*/").
+## Catchall terminal arms (like `_ => return none`) must NOT be emitted as early if-blocks
+## because they shadow all subsequent value arms. They must be the final else of the ternary.
+fn arm_cond_is_catchall(pat: Expr) -> bool {
+    let c = arm_cond(pat)
+    str_eq(c, "1 /*bind*/") or str_eq(c, "1 /*default*/")
+}
+
 fn arm_cond_call(c: box<CallExpr>) -> str {
     let ce = box_deref(c)
     match ce.callee {
@@ -923,24 +931,36 @@ fn emit_must_expr(me: box<MustExpr>, pp: str, rc: str) -> result<str, str> {
     let ind1 = "    "
     let ind2 = "        "
 
-    ## Check if any arm is terminal
+    ## Check if any arm is terminal (non-catchall only) or catchall terminal
+    ## Catchall terminal arms (always-true cond) must NOT go into the early if-block phase —
+    ## doing so shadows all subsequent value arms. They belong as the final else of the ternary.
     let mut any_terminal: bool = false
+    let mut has_catchall_terminal: bool = false
+    let mut catchall_terminal_arm_idx: i64 = -1
     let mut i: i64 = 0
     loop {
         if i >= narms { break }
-        if arm_is_terminal(m.arms[i as u64].body) { any_terminal = true }
+        let arm = m.arms[i as u64]
+        if arm_is_terminal(arm.body) {
+            if arm_cond_is_catchall(arm.pattern) {
+                has_catchall_terminal = true
+                catchall_terminal_arm_idx = i
+            } else {
+                any_terminal = true
+            }
+        }
         i = i + 1
     }
 
     let mut out: str = str_concat("(__extension__ ({\n", str_concat(ind1, str_concat("__auto_type _m = ", str_concat(subj, ";\n"))))
 
     if any_terminal {
-        ## Early-exit style: terminal arms first, then value arm(s) as final expr
+        ## Early-exit style: non-catchall terminal arms as if-blocks, then value arm(s)
         i = 0
         loop {
             if i >= narms { break }
             let arm = m.arms[i as u64]
-            if arm_is_terminal(arm.body) {
+            if arm_is_terminal(arm.body) and not arm_cond_is_catchall(arm.pattern) {
                 let cond = arm_cond(arm.pattern)
                 let bind = arm_bindings(arm.pattern)
                 let tbody = emit_terminal_body_str(arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
@@ -968,22 +988,63 @@ fn emit_must_expr(me: box<MustExpr>, pp: str, rc: str) -> result<str, str> {
             }
             i = i + 1
         }
+        ## If catchall terminal exists with no value arms, emit it as final if-block
+        if has_catchall_terminal {
+            let carm = m.arms[catchall_terminal_arm_idx as u64]
+            let cond = arm_cond(carm.pattern)
+            let bind = arm_bindings(carm.pattern)
+            let tbody = emit_terminal_body_str(carm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
+            out = str_concat(out, str_concat(ind1, str_concat("if (", str_concat(cond, ") {\n"))))
+            if str_len(bind) > 0 {
+                out = str_concat(out, str_concat(ind2, str_concat(bind, "\n")))
+            }
+            out = str_concat(out, str_concat(tbody, "\n"))
+            out = str_concat(out, str_concat(ind1, "}\n"))
+        }
     } else {
-        ## Ternary chain for all-value arms: last arm is unconditional else clause
+        ## Ternary chain for value arms; catchall terminal (if any) is the final else
         out = str_concat(out, str_concat(ind1, "("))
         i = 0
         loop {
             if i >= narms { break }
             let arm = m.arms[i as u64]
+            ## Skip catchall terminal in the ternary loop (handled as final else below)
+            if arm_is_terminal(arm.body) and arm_cond_is_catchall(arm.pattern) {
+                i = i + 1
+                continue
+            }
+            ## Check if this is the last non-catchall arm
+            let mut is_last_non_catchall: bool = true
+            let mut j: i64 = i + 1
+            loop {
+                if j >= narms { break }
+                let narm = m.arms[j as u64]
+                if not (arm_is_terminal(narm.body) and arm_cond_is_catchall(narm.pattern)) {
+                    is_last_non_catchall = false
+                    break
+                }
+                j = j + 1
+            }
             if i > 0 { out = str_concat(out, " :\n    ") }
-            if i == narms - 1 {
+            if is_last_non_catchall and not has_catchall_terminal {
+                ## Last value arm with no catchall: emit unconditionally (else clause)
                 let tb = emit_ternary_arm_body(arm.pattern, arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
                 out = str_concat(out, tb)
             } else {
+                ## Not last, or catchall terminal will be the else: emit with condition
                 let ta = emit_one_ternary_arm(arm.pattern, arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
                 out = str_concat(out, ta)
             }
             i = i + 1
+        }
+        ## Catchall terminal as the unconditional else of the ternary
+        if has_catchall_terminal {
+            let carm = m.arms[catchall_terminal_arm_idx as u64]
+            let tbody = emit_terminal_body_str(carm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
+            ## Use (void*)0 as dummy (not ((void)0)) to avoid void-type ternary mismatch.
+            ## All catchall terminal arms in practice return pointer types, so void* is compatible.
+            let catchall_c = str_concat("(__extension__ ({\n", str_concat(tbody, "\n    (void*)0;\n}))"))
+            out = str_concat(out, str_concat(" :\n    ", catchall_c))
         }
         out = str_concat(out, ");\n")
     }
@@ -1000,24 +1061,36 @@ fn emit_match_expr(me: box<MatchExpr>, pp: str, rc: str) -> result<str, str> {
     let ind1 = "    "
     let ind2 = "        "
 
-    ## Check if any arm is terminal
+    ## Check if any arm is terminal (non-catchall only) or catchall terminal
+    ## Catchall terminal arms (always-true cond) must NOT go into the early if-block phase —
+    ## doing so shadows all subsequent value arms. They belong as the final else of the ternary.
     let mut any_terminal: bool = false
+    let mut has_catchall_terminal: bool = false
+    let mut catchall_terminal_arm_idx: i64 = -1
     let mut i: i64 = 0
     loop {
         if i >= narms { break }
-        if arm_is_terminal(m.arms[i as u64].body) { any_terminal = true }
+        let arm = m.arms[i as u64]
+        if arm_is_terminal(arm.body) {
+            if arm_cond_is_catchall(arm.pattern) {
+                has_catchall_terminal = true
+                catchall_terminal_arm_idx = i
+            } else {
+                any_terminal = true
+            }
+        }
         i = i + 1
     }
 
     let mut out: str = str_concat("(__extension__ ({\n", str_concat(ind1, str_concat("__auto_type _m = ", str_concat(subj, ";\n"))))
 
     if any_terminal {
-        ## Early-exit style for terminal arms, ternary for value arms
+        ## Early-exit style for non-catchall terminal arms, ternary for value arms
         i = 0
         loop {
             if i >= narms { break }
             let arm = m.arms[i as u64]
-            if arm_is_terminal(arm.body) {
+            if arm_is_terminal(arm.body) and not arm_cond_is_catchall(arm.pattern) {
                 let cond = arm_cond(arm.pattern)
                 let bind = arm_bindings(arm.pattern)
                 let tbody = emit_terminal_body_str(arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
@@ -1055,11 +1128,12 @@ fn emit_match_expr(me: box<MatchExpr>, pp: str, rc: str) -> result<str, str> {
                 let arm = m.arms[i as u64]
                 if not arm_is_terminal(arm.body) {
                     if vi > 0 { out = str_concat(out, " :\n    ") }
-                    if vi == nval - 1 {
-                        ## Last non-terminal arm: emit body only (unconditional else clause)
+                    if vi == nval - 1 and not has_catchall_terminal {
+                        ## Last non-terminal arm, no catchall: emit unconditionally (else clause)
                         let tb = emit_ternary_arm_body(arm.pattern, arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
                         out = str_concat(out, tb)
                     } else {
+                        ## Emit with condition (catchall terminal will be the else)
                         let ta = emit_one_ternary_arm(arm.pattern, arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
                         out = str_concat(out, ta)
                     }
@@ -1067,27 +1141,76 @@ fn emit_match_expr(me: box<MatchExpr>, pp: str, rc: str) -> result<str, str> {
                 }
                 i = i + 1
             }
+            ## If catchall terminal exists, emit it as the final else in the ternary
+            if has_catchall_terminal {
+                let carm = m.arms[catchall_terminal_arm_idx as u64]
+                let tbody = emit_terminal_body_str(carm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
+                ## Use (void*)0 as dummy (not ((void)0)) to avoid void-type ternary mismatch.
+            ## All catchall terminal arms in practice return pointer types, so void* is compatible.
+            let catchall_c = str_concat("(__extension__ ({\n", str_concat(tbody, "\n    (void*)0;\n}))"))
+            out = str_concat(out, str_concat(" :\n    ", catchall_c))
+            }
             out = str_concat(out, ");\n")
         } else {
+            ## No value arms: emit catchall terminal as if-block, then ((void)0)
+            if has_catchall_terminal {
+                let carm = m.arms[catchall_terminal_arm_idx as u64]
+                let cond = arm_cond(carm.pattern)
+                let bind = arm_bindings(carm.pattern)
+                let tbody = emit_terminal_body_str(carm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
+                out = str_concat(out, str_concat(ind1, str_concat("if (", str_concat(cond, ") {\n"))))
+                if str_len(bind) > 0 {
+                    out = str_concat(out, str_concat(ind2, str_concat(bind, "\n")))
+                }
+                out = str_concat(out, str_concat(tbody, "\n"))
+                out = str_concat(out, str_concat(ind1, "}\n"))
+            }
             out = str_concat(out, str_concat(ind1, "((void)0);\n"))
         }
     } else {
-        ## Pure ternary chain: all but last arm have condition; last arm is unconditional else
+        ## Pure ternary chain: value arms (+ catchall terminal as final else if present)
         out = str_concat(out, str_concat(ind1, "("))
         i = 0
         loop {
             if i >= narms { break }
             let arm = m.arms[i as u64]
+            ## Skip catchall terminal in the main loop (handled as final else below)
+            if arm_is_terminal(arm.body) and arm_cond_is_catchall(arm.pattern) {
+                i = i + 1
+                continue
+            }
+            ## Determine if this is the last non-catchall arm
+            let mut is_last_non_catchall: bool = true
+            let mut j: i64 = i + 1
+            loop {
+                if j >= narms { break }
+                let narm = m.arms[j as u64]
+                if not (arm_is_terminal(narm.body) and arm_cond_is_catchall(narm.pattern)) {
+                    is_last_non_catchall = false
+                    break
+                }
+                j = j + 1
+            }
             if i > 0 { out = str_concat(out, " :\n    ") }
-            if i == narms - 1 {
-                ## Last arm: emit body only
+            if is_last_non_catchall and not has_catchall_terminal {
+                ## Last value arm, no catchall: emit unconditionally (else clause)
                 let tb = emit_ternary_arm_body(arm.pattern, arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
                 out = str_concat(out, tb)
             } else {
+                ## Emit with condition (catchall terminal or more arms follow)
                 let ta = emit_one_ternary_arm(arm.pattern, arm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
                 out = str_concat(out, ta)
             }
             i = i + 1
+        }
+        ## Catchall terminal as the unconditional else of the ternary
+        if has_catchall_terminal {
+            let carm = m.arms[catchall_terminal_arm_idx as u64]
+            let tbody = emit_terminal_body_str(carm.body, pp, rc) must { ok(v) => v   err(e) => return err(e) }
+            ## Use (void*)0 as dummy (not ((void)0)) to avoid void-type ternary mismatch.
+            ## All catchall terminal arms in practice return pointer types, so void* is compatible.
+            let catchall_c = str_concat("(__extension__ ({\n", str_concat(tbody, "\n    (void*)0;\n}))"))
+            out = str_concat(out, str_concat(" :\n    ", catchall_c))
         }
         out = str_concat(out, ");\n")
     }
