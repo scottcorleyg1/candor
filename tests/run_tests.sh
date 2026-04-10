@@ -16,7 +16,7 @@ CANDORC="$REPO/src/compiler/lexer.exe"
 RUNTIME="$REPO/src/compiler"
 GCC="PATH=/c/msys64/mingw64/bin:$PATH /c/msys64/mingw64/bin/gcc.exe"
 CASES="$REPO/tests/cases"
-TMP="/d/tmp/cnd_tests"
+TMP="$REPO/tmp/cnd_tests"
 
 mkdir -p "$TMP"
 

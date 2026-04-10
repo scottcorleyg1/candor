@@ -769,6 +769,7 @@ fn arm_cond(pat: Expr) -> str {
         Expr::Bool(b)      => bool_to_c_cond(b)
         Expr::Path(en, vn) => str_concat("_m._tag == _TAG_", str_concat(en, str_concat("_", vn)))
         Expr::Call(c)      => arm_cond_call(c)
+        Expr::Int(s)       => str_concat("_m == ", s)
         Expr::Ident(name)  => "1 /*bind*/"
         _ => "1 /*default*/"
     }

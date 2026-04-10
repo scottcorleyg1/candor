@@ -1,0 +1,39 @@
+fn main() -> unit {
+    let n1: i64 = 0
+    let n2: i64 = 1
+    let n3: i64 = 42
+
+    let r1 = match n1 {
+        0 => "zero"
+        1 => "one"
+        _ => "other"
+    }
+
+    let r2 = match n2 {
+        0 => "zero"
+        1 => "one"
+        _ => "other"
+    }
+
+    let r3 = match n3 {
+        0 => "zero"
+        1 => "one"
+        _ => "other"
+    }
+
+    if not str_eq(r1, "zero") {
+        print("fail 1")
+        return unit
+    }
+    if not str_eq(r2, "one") {
+        print("fail 2")
+        return unit
+    }
+    if not str_eq(r3, "other") {
+        print("fail 3")
+        return unit
+    }
+
+    print("OK")
+    return unit
+}
