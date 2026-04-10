@@ -1237,14 +1237,17 @@ fn emit_ok_expr(e: box<Expr>, pp: str, rc: str) -> result<str, str> {
     let inner = emit_expr(box_deref(e), pp, rc) must {
         ok(v) => v   err(err2) => return err(err2)
     }
-    return ok_s(str_concat("_cnd_ok(", str_concat(inner, ")")))
+    ## Emit as a compound literal using the result type from rc.
+    ## ok(v) in a result<T,E> function emits: (RC){ ._ok=1, ._ok_val=inner }
+    return ok_s(str_concat("(", str_concat(rc, str_concat("){ ._ok=1, ._ok_val=", str_concat(inner, " }")))))
 }
 
 fn emit_err_expr(e: box<Expr>, pp: str, rc: str) -> result<str, str> {
     let inner = emit_expr(box_deref(e), pp, rc) must {
         ok(v) => v   err(err2) => return err(err2)
     }
-    return ok_s(str_concat("_cnd_err(", str_concat(inner, ")")))
+    ## Emit as a compound literal: err(e) in a result<T,E> function emits: (RC){ ._ok=0, ._err_val=inner }
+    return ok_s(str_concat("(", str_concat(rc, str_concat("){ ._ok=0, ._err_val=", str_concat(inner, " }")))))
 }
 
 ## ── Statement emission ────────────────────────────────────────────────────────

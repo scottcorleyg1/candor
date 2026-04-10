@@ -1,0 +1,26 @@
+fn parse_int(s: str) -> result<i64, str> {
+    let n = _cnd_str_to_int(s)
+    if n == 0 and not str_eq(s, "0") {
+        return err(str_concat("not a number: ", s))
+    }
+    ok(n)
+}
+
+fn double_parsed(s: str) -> result<i64, str> {
+    let n = parse_int(s) must {
+        ok(v)  => v
+        err(e) => return err(e)
+    }
+    ok(n * 2)
+}
+
+fn main() -> unit {
+    match double_parsed("21") {
+        ok(v)  => print(_cnd_int_to_str(v))
+        err(e) => print(e)
+    }
+    match double_parsed("abc") {
+        ok(v)  => print(_cnd_int_to_str(v))
+        err(e) => print(e)
+    }
+}

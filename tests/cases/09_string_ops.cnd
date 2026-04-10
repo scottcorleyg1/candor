@@ -1,0 +1,9 @@
+fn main() -> unit {
+    let a = "hello"
+    let b = " world"
+    let c = str_concat(a, b)
+    print(c)
+    print(_cnd_int_to_str(str_len(c) as i64))
+    print(_cnd_bool_to_str(str_eq(a, "hello")))
+    print(_cnd_bool_to_str(str_eq(a, "world")))
+}

@@ -1,0 +1,16 @@
+fn sum_to(n: i64) -> i64 {
+    let mut acc: i64 = 0
+    let mut i: i64 = 1
+    loop {
+        if i > n { break }
+        acc = acc + i
+        i = i + 1
+    }
+    acc
+}
+
+fn main() -> unit {
+    print(_cnd_int_to_str(sum_to(10)))
+    print(_cnd_int_to_str(sum_to(0)))
+    print(_cnd_int_to_str(sum_to(1)))
+}

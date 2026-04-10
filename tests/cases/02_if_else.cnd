@@ -1,0 +1,16 @@
+fn classify(n: i64) -> str {
+    let mut result: str = "zero"
+    if n > 0 {
+        result = "positive"
+    }
+    if n < 0 {
+        result = "negative"
+    }
+    result
+}
+
+fn main() -> unit {
+    print(classify(5))
+    print(classify(0))
+    print(classify(-3))
+}

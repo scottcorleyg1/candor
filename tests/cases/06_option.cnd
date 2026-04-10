@@ -1,0 +1,25 @@
+fn find_first(v: vec<i64>, target: i64) -> option<i64> {
+    let mut i: i64 = 0
+    let n = vec_len(v) as i64
+    loop {
+        if i >= n { break }
+        if v[i as u64] == target { return some(i) }
+        i = i + 1
+    }
+    none
+}
+
+fn main() -> unit {
+    let mut v: vec<i64> = vec_new()
+    vec_push(v, 5)
+    vec_push(v, 10)
+    vec_push(v, 15)
+    match find_first(v, 10) {
+        some(idx) => print(_cnd_int_to_str(idx))
+        none      => print("not found")
+    }
+    match find_first(v, 99) {
+        some(idx) => print(_cnd_int_to_str(idx))
+        none      => print("not found")
+    }
+}

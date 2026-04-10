@@ -1,0 +1,15 @@
+fn safe_div(a: i64, b: i64) -> result<i64, str> {
+    if b == 0 { return err("division by zero") }
+    ok(a / b)
+}
+
+fn main() -> unit {
+    match safe_div(10, 2) {
+        ok(v)  => print(_cnd_int_to_str(v))
+        err(e) => print(e)
+    }
+    match safe_div(10, 0) {
+        ok(v)  => print(_cnd_int_to_str(v))
+        err(e) => print(e)
+    }
+}

@@ -1,0 +1,9 @@
+fn add(a: i64, b: i64) -> i64 { a + b }
+fn sub(a: i64, b: i64) -> i64 { a - b }
+fn mul(a: i64, b: i64) -> i64 { a * b }
+
+fn main() -> unit {
+    print(_cnd_int_to_str(add(10, 3)))
+    print(_cnd_int_to_str(sub(10, 3)))
+    print(_cnd_int_to_str(mul(10, 3)))
+}

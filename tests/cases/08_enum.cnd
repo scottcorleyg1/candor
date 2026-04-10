@@ -1,0 +1,16 @@
+enum Shape {
+    Circle(i64),
+    Rect(i64, i64)
+}
+
+fn describe(s: Shape) -> str {
+    match s {
+        Shape::Circle(r) => str_concat("circle r=", _cnd_int_to_str(r))
+        Shape::Rect(w, h) => str_concat("rect ", str_concat(_cnd_int_to_str(w), str_concat("x", _cnd_int_to_str(h))))
+    }
+}
+
+fn main() -> unit {
+    print(describe(Shape::Circle(5)))
+    print(describe(Shape::Rect(3, 4)))
+}

@@ -1,0 +1,15 @@
+struct Point {
+    x: i64,
+    y: i64
+}
+
+fn manhattan(p: Point) -> i64 {
+    p.x + p.y
+}
+
+fn main() -> unit {
+    let p = Point{ x: 3, y: 4 }
+    print(_cnd_int_to_str(p.x))
+    print(_cnd_int_to_str(p.y))
+    print(_cnd_int_to_str(manhattan(p)))
+}
