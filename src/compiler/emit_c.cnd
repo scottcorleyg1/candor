@@ -1496,12 +1496,12 @@ fn emit_for_stmt(fs: ForStmt, buf: refmut<EmBuf>, indent: i64, ind: str, pp: str
     let ind2 = em_indent(indent + 2)
     emb_line(buf, str_concat(ind, "{"))
     emb_line(buf, str_concat(ind1, str_concat("auto _iter = ", str_concat(iter, ";"))))
-    emb_line(buf, str_concat(ind1, "uint64_t _n = _cnd_vec_len(_iter);"))
+    emb_line(buf, str_concat(ind1, "uint64_t _n = _iter._len;"))
     emb_line(buf, str_concat(ind1, "uint64_t _i = 0;"))
     emb_line(buf, str_concat(ind1, "while (_i < _n) {"))
-    emb_line(buf, str_concat(ind2, str_concat("auto ", str_concat(c_ident(fs.key), " = _cnd_vec_get(_iter, _i);"))))
+    emb_line(buf, str_concat(ind2, str_concat("auto ", str_concat(c_ident(fs.key), " = _iter._data[_i];"))))
     match fs.val {
-        some(vn) => emb_line(buf, str_concat(ind2, str_concat("auto ", str_concat(c_ident(vn), " = _cnd_map_val(_iter, _i);"))))
+        some(vn) => emb_line(buf, str_concat(ind2, str_concat("auto ", str_concat(c_ident(vn), " = _iter._data[_i]; /* maps not supported in for */"))))
         none     => unit
     }
     emit_stmts(fs.body, buf, indent + 2, pp, rc) must {
