@@ -1,1 +1,10 @@
 date,language,task_id,attempt_1_pass,total_turns,total_tokens,loc,first_error_type,notes
+2026-04-09,Candor,A1,yes,1,~400,12,none,loop + implicit tail return — natural fit
+2026-04-09,Candor,A2,yes,1,~450,14,none,result/ok/err — direct with new compound literal emission
+2026-04-09,Candor,A3,yes,1,~500,16,none,enum + match — straightforward
+2026-04-09,Candor,A4,no,2,~600,13,runtime,"for x in v emits _cnd_vec_len/_cnd_vec_get not in single-file runtime; rewrote with loop+index"
+2026-04-09,Candor,A5,yes,1,~550,22,none,nested must propagation — worked first try
+2026-04-09,Candor,A6,yes,1,~500,24,none,option<i64> + match some/none — clean
+2026-04-09,Candor,A7,yes,1,~300,7,none,recursive fib — simplest case
+2026-04-09,Candor,A8,no,2,~500,11,logic,"match on i64 literals silently wrong (arm_cond returns 1/*default*/ for Int); rewrote with if/else"
+2026-04-09,Candor,C1,yes,1,~600,30,none,avoided match trap by using if+loop; correct output first try

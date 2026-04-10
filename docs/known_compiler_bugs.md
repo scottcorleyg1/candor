@@ -161,3 +161,64 @@ Emitted in stage2.c as: `if (1 /*bind*/) { return NULL; }  /* ExprS arm dead */`
 3. `(void*)0` is used as the dummy value (not `((void)0)`) to avoid ternary type mismatch — all catchall terminal arms in Candor source return pointer types.
 
 **Impact:** Fixed all ~75 functions whose bodies were pure-value match/must expressions. `stmt_to_expr` now correctly returns `some(es)` for ExprS stmts. `emit_fn_body` correctly emits `return expr;` for all function tails. stage4.c == stage2.c (0 diff lines). M9.19 — full bootstrap idempotency achieved.
+
+---
+
+## Bug 11 — `match` on integer literals silently produces wrong output
+**First observed: 2026-04-09 (agent eval A8)**
+**Status: Open — language limitation**
+
+**Symptoms:**
+```candor
+match n {
+    0 => "zero"
+    1 => "one"
+    _ => "other"
+}
+```
+Every input returns "zero" (the first arm). No compile error.
+
+**Root cause:**
+`arm_cond` in `emit_c.cnd` has no case for `Expr::Int`. Integer literal arms fall through to `_ => "1 /*default*/"` — an always-true condition. Every arm fires for every input. The `_` wildcard arm at the end is unreachable dead code.
+
+**Workaround:**
+Use `if`/`else if` chains for integer switching:
+```candor
+let mut result: str = "other"
+if n == 0 { result = "zero" }
+if n == 1 { result = "one" }
+result
+```
+
+**Fix (not yet done):** Add `Expr::Int(s) => str_concat("_m == ", s)` to `arm_cond` in `emit_c.cnd`. This is a planned language feature — integer match is semantically valid but the emitter doesn't support it yet.
+
+---
+
+## Bug 12 — `for x in v` emits `_cnd_vec_len`/`_cnd_vec_get` not defined for single-file programs
+**First observed: 2026-04-09 (agent eval A4)**
+**Status: Open — runtime gap**
+
+**Symptoms:**
+```
+error: implicit declaration of function '_cnd_vec_len'
+error: implicit declaration of function '_cnd_vec_get'
+```
+Only affects single-file programs. Multi-file compiler compilation is unaffected because `vec_len` is a builtin that emits inline.
+
+**Root cause:**
+The `for x in v` loop emitter generates calls to `_cnd_vec_len(v)` and `_cnd_vec_get(v, i)` helper functions. These are not in `_cnd_runtime.h` and are not emitted as inline code for single-file programs.
+
+**Workaround:**
+Use an explicit loop with index:
+```candor
+let n = vec_len(v) as i64
+let mut i: i64 = 0
+loop {
+    if i >= n { break }
+    let x = v[i as u64]
+    ...
+    i = i + 1
+}
+```
+
+**Fix (not yet done):** Either add `_cnd_vec_len`/`_cnd_vec_get` to `_cnd_runtime.h`, or change the `for` emitter to emit inline index access instead of helper calls.

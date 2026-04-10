@@ -69,6 +69,10 @@ let val = my_func() must {
 - All match arms must return the same type.
 - `must` is mandatory for `result<T,E>` and `option<T>` — ignoring them is a compile error.
 - `break` and `continue` are terminal arms in match/must (no value).
+- **`match` is for structural patterns only** (enum variants, `some`/`none`, `ok`/`err`, bool).
+  Integer literal arms silently produce wrong output — use `if`/`else if` for integer switching.
+- **`for x in v` is broken for single-file programs** — use an explicit `loop` with index instead.
+  See `docs/known_compiler_bugs.md` Bugs 11 and 12.
 
 ---
 
