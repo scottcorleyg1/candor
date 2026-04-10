@@ -83,10 +83,10 @@ Result: `stage3.exe` runs, exits 0, produces 11,616 lines. **M9.18 achieved.**
 
 ---
 
-### TASK-02 — Fix `auto _t` redefinition in Go emitter
+### TASK-02 — Fix `auto _t` redefinition in Go emitter — CLOSED ✅
 **Opened: 2026-04-04 (Gemini session)**  
 **Owner:** Gemini  
-**Status:** Open — not yet fixed  
+**Status:** Closed — Audit of `emit_c.go` confirms `emitMustOrMatch` now uses `res := e.freshTmp()`. The bug was resolved under the hood previously!  
 **File:** `compiler/emit_c/emit_c.go` ~line 5458
 
 **Problem (2026-04-04):** `emitMustOrMatch()` hardcodes `auto _t = ...` for the outer let-binding of a must result. Two must-expressions in the same C scope → `redefinition of '_t'` then cascade of undeclared `_m`, `v`.
@@ -101,10 +101,10 @@ Result: `stage3.exe` runs, exits 0, produces 11,616 lines. **M9.18 achieved.**
 
 ---
 
-### TASK-05 — Commit map macros permanently into `_cnd_runtime.h`
+### TASK-05 — Commit map macros permanently into `_cnd_runtime.h` — CLOSED ✅
 **Opened: 2026-04-02**  
-**Owner:** Unassigned  
-**Status:** Open
+**Owner:** Gemini  
+**Status:** Closed — Macros formally appended into the file and tracked securely by Git in M9.19.
 
 The map macros (`_cnd_map_insert`, `_cnd_map_get`, `_cnd_map_contains`) and `_CndRes_int64_t_const_charptr` typedef are appended via `cat >>` before each compile but are stripped by VSCode on save (Bug 1 in known_compiler_bugs.md). They need to be committed into the file permanently. This is the single highest-leverage quality-of-life fix — eliminates a recurring manual step every session.
 

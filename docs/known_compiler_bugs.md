@@ -166,7 +166,7 @@ Emitted in stage2.c as: `if (1 /*bind*/) { return NULL; }  /* ExprS arm dead */`
 
 ## Bug 11 — `match` on integer literals silently produces wrong output
 **First observed: 2026-04-09 (agent eval A8)**
-**Status: Open — language limitation**
+**Status: Fixed: 2026-04-09**
 
 **Symptoms:**
 ```candor
@@ -190,13 +190,13 @@ if n == 1 { result = "one" }
 result
 ```
 
-**Fix (not yet done):** Add `Expr::Int(s) => str_concat("_m == ", s)` to `arm_cond` in `emit_c.cnd`. This is a planned language feature — integer match is semantically valid but the emitter doesn't support it yet.
+**Fix:** Added `Expr::Int(s) => str_concat("_m == ", s)` to `arm_cond` in `emit_c.cnd`.
 
 ---
 
 ## Bug 12 — `for x in v` emits `_cnd_vec_len`/`_cnd_vec_get` not defined for single-file programs
 **First observed: 2026-04-09 (agent eval A4)**
-**Status: Open — runtime gap**
+**Status: Fixed: 2026-04-09**
 
 **Symptoms:**
 ```
@@ -221,4 +221,4 @@ loop {
 }
 ```
 
-**Fix (not yet done):** Either add `_cnd_vec_len`/`_cnd_vec_get` to `_cnd_runtime.h`, or change the `for` emitter to emit inline index access instead of helper calls.
+**Fix:** Changed `emit_for_stmt` in `emit_c.cnd` to emit inline index access `_iter._len` and `_iter._data[_i]` instead of helper calls.

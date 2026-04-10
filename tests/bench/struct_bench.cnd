@@ -15,7 +15,7 @@ fn struct_test() -> i64 {
     
     loop {
         if i >= max_iter { break }
-        vec_push(refmut(v), Point { x: i, y: i, z: i })
+        vec_push(v, Point { x: i, y: i, z: i })
         i = i + 1
     }
     

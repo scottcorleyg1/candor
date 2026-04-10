@@ -35,8 +35,8 @@ Candor is self-hosting. stage4.c == stage2.c exactly.
 | Correctness test suite | ✅ 10/10 passing (`bash tests/run_tests.sh`) |
 | Runtime benchmarks | ✅ Measured (fib 65x Python, sieve 3x Python) |
 | Agent eval (Candor) | ✅ 7/9 first-attempt, 2 known bugs found |
-| Bug 11: `match` on int literals | ❌ Open — silently wrong output |
-| Bug 12: `for x in v` single-file | ❌ Open — missing runtime helpers |
+| Bug 11: `match` on int literals | ✅ Fixed |
+| Bug 12: `for x in v` single-file | ✅ Fixed |
 | Agent eval other languages | ❌ Not started — Python/Rust/TypeScript needed |
 | TASK-02: Go emitter `auto _t` | ❌ Open (separate from bootstrap) |
 
@@ -44,7 +44,7 @@ Candor is self-hosting. stage4.c == stage2.c exactly.
 
 ## Open Tasks For You
 
-### Priority 1 — Fix Bug 11: integer match (emit_c.cnd)
+### ✅ Priority 1 — Fix Bug 11: integer match (Completed)
 
 **File:** `src/compiler/emit_c.cnd`
 **Function:** `arm_cond` (~line 763)
@@ -60,7 +60,7 @@ Add a new test: `tests/cases/11_int_match.cnd` with arms `0 => "zero"` etc.
 
 ---
 
-### Priority 2 — Fix Bug 12: `for x in v` single-file (emit_c.cnd or _cnd_runtime.h)
+### ✅ Priority 2 — Fix Bug 12: `for` loop single-file (Completed) (emit_c.cnd or _cnd_runtime.h)
 
 **Option A (easier):** Add `_cnd_vec_len` and `_cnd_vec_get` to `_cnd_runtime.h`.
 They must use the same guard naming as the emitter.
@@ -126,8 +126,6 @@ bash tests/run_tests.sh
 
 ## What NOT To Do
 
-- Do not use `for x in v` in single-file .cnd programs until Bug 12 is fixed
-- Do not use `match` on integer literals until Bug 11 is fixed
 - Do not modify `_cnd_runtime.h` via `cat >>` — edit the file directly and commit
 - Always verify `diff stage2.c stage4.c = 0` after any change to emit_c.cnd
 - Do not amend published commits

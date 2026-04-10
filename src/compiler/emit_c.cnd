@@ -374,7 +374,6 @@ fn emit_call(c: box<CallExpr>, pp: str, rc: str) -> result<str, str> {
     if str_eq(bname, "vec_push") and n_args >= 2 {
         let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
         let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
-        ## Generic push via statement expression: grows and appends
         let push_suffix = str_concat(a1, "); }))")
         return ok_s(str_concat("(__extension__ ({ __typeof__(", str_concat(a0, str_concat(")* _vp = &(", str_concat(a0, str_concat("); if (_vp->_len >= _vp->_cap) { uint64_t _nc = _vp->_cap ? _vp->_cap*2 : 4; _vp->_data = (__typeof__(_vp->_data))realloc(_vp->_data, _nc*sizeof(*_vp->_data)); _vp->_cap = _nc; } _vp->_data[_vp->_len++] = (", push_suffix))))))
     }
@@ -384,6 +383,38 @@ fn emit_call(c: box<CallExpr>, pp: str, rc: str) -> result<str, str> {
         let pop_suffix = str_concat(a0, "); assert(_vp->_len > 0); _vp->_data[--_vp->_len]; }))")
         return ok_s(str_concat("(__extension__ ({ __typeof__(", str_concat(a0, str_concat(")* _vp = &(", pop_suffix))))
     }
+    ## vec_drop(v) → free buffer + zero length/capacity
+    if str_eq(bname, "vec_drop") and n_args >= 1 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        return ok_s(str_concat("(__extension__ ({ __typeof__(", str_concat(a0, str_concat(")* _vp = &(", str_concat(a0, "); free(_vp->_data); _vp->_data = NULL; _vp->_len = 0; _vp->_cap = 0; }))", "")))))
+    }
+    ## map_drop(m) → _cnd_map_drop(&(m)) macro
+    if str_eq(bname, "map_drop") and n_args >= 1 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        return ok_s(str_concat("_cnd_map_drop(", str_concat(a0, ")")))
+    }
+    ## map_get(m, k) -> _cnd_map_get(m, k)
+    if str_eq(bname, "map_get") and n_args >= 2 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        return ok_s(str_concat("_cnd_map_get(", str_concat(a0, str_concat(", ", str_concat(a1, ")")))))
+    }
+    ## map_contains(m, k) -> _cnd_map_contains(m, k)
+    if str_eq(bname, "map_contains") and n_args >= 2 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        return ok_s(str_concat("_cnd_map_contains(", str_concat(a0, str_concat(", ", str_concat(a1, ")")))))
+    }
+    ## map_insert(m, k, v) -> _cnd_map_insert(m, k, v)
+    if str_eq(bname, "map_insert") and n_args >= 3 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        let a2 = emit_expr(ce.args[2 as u64], pp, rc) must { ok(v) => v err(e) => return err(e) }
+        let map_suffix = str_concat(a1, str_concat(", ", str_concat(a2, ")")))
+        return ok_s(str_concat("_cnd_map_insert(", str_concat(a0, str_concat(", ", map_suffix))))
+    }
+    ## map_new() -> {0}
+    if str_eq(bname, "map_new") { return ok_s("{0}") }
 
     ## print(s) → printf("%s\n", s)
     if str_eq(bname, "print") and n_args >= 1 {

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "candor-collab": {
+      "type": "http",
+      "url": "http://localhost:8765/sse"
+    }
+  }
+}

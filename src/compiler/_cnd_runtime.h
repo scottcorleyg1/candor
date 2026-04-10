@@ -278,8 +278,17 @@ static inline uint64_t _cnd_map_hash_str(const char* k) {
     __typeof__(&_gm._buckets[0]->_val) _gr=NULL; \
     if(_gm._buckets){uint64_t _gb=_cnd_map_hash_str(_gk)%_gm._cap; \
         __auto_type _ge=_gm._buckets[_gb]; \
-        while(_ge){if(strcmp(_ge->_key,_gk)==0){__typeof__(_ge->_val)* _gp=(__typeof__(_ge->_val)*)malloc(sizeof(_ge->_val));*_gp=_ge->_val;_gr=_gp;break;}_ge=_ge->_next;}} \
-    _gr; \
+        while(_ge){if(strcmp(_ge->_key,_gk)==0){__typeof__(_ge->_val)* _gp=(__typeof__(_ge->_val)*)malloc(sizeof(_ge->_val));*_gp=_ge->_val;_gr=_gp;break;}_ge=_ge->_next;} \
+    } _gr; \
+})
+#define _cnd_map_drop(mp) __extension__ ({ \
+    __auto_type _md=(mp); \
+    if(_md->_buckets){ \
+        for(uint64_t _di=0;_di<_md->_cap;_di++){ \
+            __auto_type _de=_md->_buckets[_di]; \
+            while(_de){__auto_type _dn=_de->_next;free((void*)_de->_key);free(_de);_de=_dn;} \
+        } free(_md->_buckets);_md->_buckets=NULL;_md->_len=0;_md->_cap=0; \
+    } \
 })
 #define _cnd_map_contains(m, key) __extension__ ({ \
     __auto_type _cm=(m);__auto_type _ck=(key);int _cr=0; \

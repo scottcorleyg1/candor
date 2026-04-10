@@ -124,24 +124,27 @@ _cnd_int_to_str(n: i64) -> str         ## NOT int_to_str — that doesn't exist
 ### Vectors (`vec<T>`)
 ```candor
 vec_new() -> vec<T>                     ## returns {0} in C
-vec_push(v: refmut<vec<T>>, val: T)    ## MUTATES v — pass refmut, NOT by value
-vec_pop(v: refmut<vec<T>>) -> option<T>
+vec_push(v: vec<T>, val: T)            ## Mutates v. Pass raw variable natively, macro extracts pointer automatically!
+vec_pop(v: vec<T>) -> option<T>
 vec_len(v: vec<T>) -> u64              ## returns u64, cast to i64 for arithmetic
+vec_drop(v: vec<T>)                    ## Manual cleanup: frees the internal data buffer to stop memory leaks
 v[i as u64]                            ## index — i must be u64
 ```
 
 ### Maps (`map<str, V>`)
 ```candor
 map_new() -> map<str, V>
-map_insert(m: refmut<map<str,V>>, k: str, v: V)
+map_insert(m: map<str,V>, k: str, v: V) ## Mutates m. Pass raw variable natively.
 map_get(m: map<str,V>, k: str) -> option<V>
 map_contains(m: map<str,V>, k: str) -> bool
+map_drop(m: map<str,V>)                 ## Manual cleanup: frees bucket arrays and string nodes
 ```
 
 ### Box / Heap
 ```candor
 box_new(val: T) -> box<T>
 box_deref(b: box<T>) -> T
+box_drop(b: box<T>)                     ## Manual cleanup: frees the heap pointer
 ```
 
 ### I/O
@@ -188,7 +191,6 @@ rand_set_seed(seed: u64)
 | Wrong | Right | Why |
 |-------|-------|-----|
 | `s[i]` | `str_byte(s, i)` | str is `const char*`, not indexable |
-| `vec_push(v, x)` | `vec_push(refmut(v), x)` | vec_push mutates |
 | `vec_len(v)` used as i64 | `vec_len(v) as i64` | returns u64 |
 | `int_to_str(n)` | `_cnd_int_to_str(n)` | different name |
 | `let x = if cond { a } else { b }` | `let mut x = b; if cond { x = a }` | if-as-value not supported |
