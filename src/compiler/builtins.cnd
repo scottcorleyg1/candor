@@ -1,0 +1,29 @@
+## builtins.cnd — Candor Standard Library Builtins Definition
+## These map directly to macros or C native functions in _cnd_runtime.h.
+
+extern fn print(s: str) -> unit
+extern fn print_err(s: str) -> unit
+extern fn str_concat(a: str, b: str) -> str
+extern fn int_to_str(i: i64) -> str
+extern fn str_len(s: str) -> i64
+extern fn str_byte(s: str, i: i64) -> u8
+extern fn str_eq(a: str, b: str) -> bool
+extern fn str_substr(s: str, start: i64, len: i64) -> str
+extern fn str_from_u8(u: u8) -> str
+extern fn vec_len(v: vec<unit>) -> i64  ## Generics typecheck implicitly
+extern fn box_new(v: unit) -> box<unit>
+extern fn box_deref(b: box<unit>) -> unit
+extern fn os_args() -> vec<str>
+extern fn fs_read_file(path: str) -> result<str, str>
+extern fn path_dir(path: str) -> str
+extern fn path_join(a: str, b: str) -> str
+extern fn os_exec(args: vec<str>) -> result<i64, str>
+extern fn print_str_list(prefix: str, l: vec<str>) -> unit
+extern fn vec_new() -> vec<unit>
+extern fn map_new() -> map<str, unit>
+extern fn vec_push(v: vec<unit>, el: unit) -> unit
+extern fn vec_pop(v: vec<unit>) -> unit
+extern fn map_insert(m: map<str, unit>, k: str, v: unit) -> unit
+extern fn map_get(m: map<str, unit>, k: str) -> option<unit>
+extern fn map_contains(m: map<str, unit>, k: str) -> bool
+extern fn try_read_line() -> option<str>

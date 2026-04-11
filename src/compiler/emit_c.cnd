@@ -121,6 +121,8 @@ fn emit_type_named(n: str) -> str {
     if str_eq(n, "u64")  { return "uint64_t" }
     if str_eq(n, "i128") { return "__int128" }
     if str_eq(n, "u128") { return "unsigned __int128" }
+    if str_eq(n, "f16")  { return "_Float16" }
+    if str_eq(n, "bf16") { return "__bf16" }
     if str_eq(n, "f32")  { return "float" }
     if str_eq(n, "f64")  { return "double" }
     if str_eq(n, "bool") { return "_Bool" }
@@ -386,7 +388,7 @@ fn emit_call(c: box<CallExpr>, pp: str, rc: str) -> result<str, str> {
     ## vec_drop(v) → free buffer + zero length/capacity
     if str_eq(bname, "vec_drop") and n_args >= 1 {
         let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
-        return ok_s(str_concat("(__extension__ ({ __typeof__(", str_concat(a0, str_concat(")* _vp = &(", str_concat(a0, "); free(_vp->_data); _vp->_data = NULL; _vp->_len = 0; _vp->_cap = 0; }))", "")))))
+        return ok_s(str_concat("(__extension__ ({ __typeof__(", str_concat(a0, str_concat(")* _vp = &(", str_concat(a0, "); free(_vp->_data); _vp->_data = NULL; _vp->_len = 0; _vp->_cap = 0; }))")))))
     }
     ## map_drop(m) → _cnd_map_drop(&(m)) macro
     if str_eq(bname, "map_drop") and n_args >= 1 {

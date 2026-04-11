@@ -23,6 +23,8 @@ fn TY_F64()     -> i64 pure { return 12 }
 fn TY_BOOL()    -> i64 pure { return 13 }
 fn TY_STR()     -> i64 pure { return 14 }
 fn TY_UNIT()    -> i64 pure { return 15 }
+fn TY_F16()     -> i64 pure { return 18 }
+fn TY_BF16()    -> i64 pure { return 19 }
 
 ## ── type kind tags ────────────────────────────────────────────────────────────
 ## Named TYK_* (Type Kind) to avoid collision with lexer's TK_* (Token Kind).
@@ -103,6 +105,8 @@ fn ty_i128() -> Type pure { return ty_prim(TY_I128()) }
 fn ty_u128() -> Type pure { return ty_prim(TY_U128()) }
 fn ty_f32()  -> Type pure { return ty_prim(TY_F32())  }
 fn ty_f64()  -> Type pure { return ty_prim(TY_F64())  }
+fn ty_f16()  -> Type pure { return ty_prim(TY_F16())  }
+fn ty_bf16() -> Type pure { return ty_prim(TY_BF16()) }
 fn ty_bool() -> Type pure { return ty_prim(TY_BOOL()) }
 fn ty_str()  -> Type pure { return ty_prim(TY_STR())  }
 fn ty_unit() -> Type pure { return ty_prim(TY_UNIT()) }
@@ -122,6 +126,8 @@ fn ty_show(t: Type) -> str {
         if t.prim == TY_U64()   { return "u64" }
         if t.prim == TY_I128()  { return "i128" }
         if t.prim == TY_U128()  { return "u128" }
+        if t.prim == TY_F16()   { return "f16" }
+        if t.prim == TY_BF16()  { return "bf16" }
         if t.prim == TY_F32()   { return "f32" }
         if t.prim == TY_F64()   { return "f64" }
         if t.prim == TY_BOOL()  { return "bool" }
@@ -351,6 +357,8 @@ fn lookup_prim(name: str) -> option<Type> {
     if str_eq(name, "u64")   { return some(ty_u64())   }
     if str_eq(name, "i128")  { return some(ty_i128())  }
     if str_eq(name, "u128")  { return some(ty_u128())  }
+    if str_eq(name, "f16")   { return some(ty_f16())   }
+    if str_eq(name, "bf16")  { return some(ty_bf16())  }
     if str_eq(name, "f32")   { return some(ty_f32())   }
     if str_eq(name, "f64")   { return some(ty_f64())   }
     if str_eq(name, "bool")  { return some(ty_bool())  }
@@ -718,6 +726,8 @@ fn ty_is_int(t: Type) -> bool {
 
 fn ty_is_float(t: Type) -> bool {
     if t.kind != TYK_PRIM() { return false }
+    if t.prim == TY_F16()       { return true }
+    if t.prim == TY_BF16()      { return true }
     if t.prim == TY_F32()       { return true }
     if t.prim == TY_F64()       { return true }
     if t.prim == TY_FLOAT_LIT() { return true }

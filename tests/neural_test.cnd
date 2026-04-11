@@ -1,0 +1,11 @@
+fn main() -> unit {
+    let a: f16 = 1.5 as f16
+    let b: f16 = 2.5 as f16
+    let c: f16 = a + b
+    
+    let x: bf16 = 1.0 as bf16
+    let y: bf16 = 3.0 as bf16
+    let z: bf16 = x + y
+    
+    print("f16 and bf16 ops compiled and ran!\n")
+}

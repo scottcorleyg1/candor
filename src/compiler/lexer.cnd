@@ -107,6 +107,8 @@ fn TK_CONST()     -> i64 pure { return 141 }
 fn TK_IMPL()      -> i64 pure { return 142 }
 fn TK_AS()        -> i64 pure { return 143 }
 fn TK_TRAIT()     -> i64 pure { return 144 }
+fn TK_F16()       -> i64 pure { return 145 }
+fn TK_BF16()      -> i64 pure { return 146 }
 
 ## ── character predicates ───────────────────────────────────────────────────────
 fn is_alpha(c: u8) -> bool pure {
@@ -238,6 +240,8 @@ fn make_keyword_map() -> map<str, i64> {
     map_insert(kw, "impl",      TK_IMPL())
     map_insert(kw, "as",        TK_AS())
     map_insert(kw, "trait",     TK_TRAIT())
+    map_insert(kw, "f16",       TK_F16())
+    map_insert(kw, "bf16",      TK_BF16())
     return kw
 }
 
@@ -603,6 +607,8 @@ fn token_kind_name(k: i64) -> str {
     if k == TK_IMPL()       { return "impl" }
     if k == TK_AS()         { return "as" }
     if k == TK_TRAIT()      { return "trait" }
+    if k == TK_F16()        { return "f16" }
+    if k == TK_BF16()       { return "bf16" }
     return "UNKNOWN"
 }
 
