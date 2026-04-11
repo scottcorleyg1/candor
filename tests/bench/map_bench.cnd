@@ -1,3 +1,5 @@
+fn dummy_generic(m: map<str, i64>) -> unit { return unit }
+
 fn map_test() -> i64 {
     let mut m: map<str, i64> = map_new()
     let mut i: i64 = 0
@@ -6,7 +8,7 @@ fn map_test() -> i64 {
     loop {
         if i >= max_iter { break }
         let k = _cnd_int_to_str(i)
-        map_insert(refmut(m), k, i * 2)
+        map_insert(m, k, i * 2)
         i = i + 1
     }
     
@@ -26,14 +28,14 @@ fn map_test() -> i64 {
 }
 
 fn main() -> unit {
-    let start = time_now_ms()
+    let start = _cnd_time_now_ms()
     let sum = map_test()
-    let end = time_now_ms()
+    let end = _cnd_time_now_ms()
     let diff = end - start
     print("map_test sum: ")
-    println(_cnd_int_to_str(sum))
+    print(_cnd_int_to_str(sum))
     print("Time: ")
     print(_cnd_int_to_str(diff))
-    println("ms")
+    print("ms\n")
     return unit
 }

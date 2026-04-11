@@ -4,6 +4,8 @@ struct Point {
     z: i64
 }
 
+fn dummy_generic(v: vec<Point>) -> unit { return unit }
+
 fn update_point(p: Point) -> Point {
     return Point { x: p.x + 1, y: p.y + 2, z: p.z + 3 }
 }
@@ -30,14 +32,14 @@ fn struct_test() -> i64 {
 }
 
 fn main() -> unit {
-    let start = time_now_ms()
+    let start = _cnd_time_now_ms()
     let sum = struct_test()
-    let end = time_now_ms()
+    let end = _cnd_time_now_ms()
     let diff = end - start
     print("struct_test val: ")
-    println(_cnd_int_to_str(sum))
+    print(_cnd_int_to_str(sum))
     print("Time: ")
     print(_cnd_int_to_str(diff))
-    println("ms")
+    print("ms\n")
     return unit
 }

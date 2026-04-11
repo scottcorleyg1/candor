@@ -11,14 +11,14 @@ fn string_test() -> i64 {
 }
 
 fn main() -> unit {
-    let start = time_now_ms()
+    let start = _cnd_time_now_ms()
     let sum = string_test()
-    let end = time_now_ms()
+    let end = _cnd_time_now_ms()
     let diff = end - start
     print("string_test len: ")
-    println(_cnd_int_to_str(sum))
+    print(_cnd_int_to_str(sum))
     print("Time: ")
     print(_cnd_int_to_str(diff))
-    println("ms")
+    print("ms")
     return unit
 }

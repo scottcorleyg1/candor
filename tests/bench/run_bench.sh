@@ -9,12 +9,11 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-CANDORC="$REPO/src/compiler/lexer.exe"
+CANDORC="$REPO/candorc-stage1.exe"
 RUNTIME="$REPO/src/compiler"
-GCC="PATH=/c/msys64/mingw64/bin:$PATH /c/msys64/mingw64/bin/gcc.exe"
 PYTHON="/c/Python314/python.exe"
 BENCH="$REPO/tests/bench"
-TMP="/d/tmp/cnd_bench"
+TMP="./tmp/cnd_bench"
 RUNS=5
 
 mkdir -p "$TMP"
@@ -76,8 +75,7 @@ compile_bench() {
     local c="$TMP/$name.c"
     local exe="$TMP/${name}_candor.exe"
     "$CANDORC" "$src" > "$c" 2>/dev/null
-    PATH="/c/msys64/mingw64/bin:$PATH" /c/msys64/mingw64/bin/gcc.exe \
-        -std=gnu23 -O2 -o "$exe" "$c" -I "$RUNTIME" -lm > /dev/null 2>&1
+    PATH="/c/msys64/mingw64/bin:$PATH" /c/msys64/mingw64/bin/gcc.exe -std=gnu23 -O2 -o "$exe" "$c" -I "$RUNTIME" -lm > /dev/null 2>&1
     echo "$exe"
 }
 
@@ -99,11 +97,13 @@ FIB_EXE=$(compile_bench fib)
 SIEVE_EXE=$(compile_bench sieve)
 MAP_EXE=$(compile_bench map_bench)
 STRUCT_EXE=$(compile_bench struct_bench)
+STRING_EXE=$(compile_bench string_bench)
 
 bench_pair "fib(40) recursive" "$FIB_EXE" "$BENCH/fib.py"
 bench_pair "sieve(1,000,000)" "$SIEVE_EXE" "$BENCH/sieve.py"
 bench_pair "map_insert(100,000) string keys" "$MAP_EXE" "$BENCH/map_bench.py"
 bench_pair "struct pass-by-value (10M)" "$STRUCT_EXE" "$BENCH/struct_bench.py"
+bench_pair "string builder (10,000)" "$STRING_EXE" "$BENCH/string_bench.py"
 
 echo ""
 echo "======================================"
