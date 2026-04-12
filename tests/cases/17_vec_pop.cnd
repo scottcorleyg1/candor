@@ -1,0 +1,19 @@
+## vec_pop removes last element; result is unit (discarded)
+fn main() -> unit {
+    let mut v: vec<i64> = vec_new()
+    vec_push(v, 10)
+    vec_push(v, 20)
+    vec_push(v, 30)
+
+    print(_cnd_int_to_str(vec_len(v) as i64))
+    vec_pop(v)
+    print(_cnd_int_to_str(vec_len(v) as i64))
+    print(_cnd_int_to_str(v[0]))
+    print(_cnd_int_to_str(v[1]))
+
+    vec_pop(v)
+    vec_pop(v)
+    print(_cnd_int_to_str(vec_len(v) as i64))
+
+    return unit
+}

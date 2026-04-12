@@ -125,7 +125,7 @@ _cnd_int_to_str(n: i64) -> str         ## NOT int_to_str — that doesn't exist
 ```candor
 vec_new() -> vec<T>                     ## returns {0} in C
 vec_push(v: vec<T>, val: T)            ## Mutates v. Pass raw variable natively, macro extracts pointer automatically!
-vec_pop(v: vec<T>) -> option<T>
+vec_pop(v: vec<T>) -> unit              ## pops last element in-place; return value is discarded
 vec_len(v: vec<T>) -> u64              ## returns u64, cast to i64 for arithmetic
 vec_drop(v: vec<T>)                    ## Manual cleanup: frees the internal data buffer to stop memory leaks
 v[i as u64]                            ## index — i must be u64

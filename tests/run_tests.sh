@@ -49,7 +49,7 @@ for cnd in "$CASES"/*.cnd; do
     fi
 
     # Step 3: Run
-    actual="$("$exe_out" 2>/dev/null)" || true
+    actual="$("$exe_out" 2>/dev/null | tr -d '\r')" || true
 
     # Step 4: Compare
     if [ ! -f "$expected" ]; then
@@ -64,7 +64,7 @@ for cnd in "$CASES"/*.cnd; do
             errors+=("FAIL [$name]: exit $exit_code")
         fi
     else
-        expected_content="$(cat "$expected")"
+        expected_content="$(cat "$expected" | tr -d '\r')"
         if [ "$actual" = "$expected_content" ]; then
             pass=$((pass+1))
             echo "PASS [$name]"

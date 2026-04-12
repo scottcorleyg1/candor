@@ -250,6 +250,25 @@ static inline void _cnd_vec_push_int64_t(_CndVec_int64_t* v, int64_t val) {
 }
 #endif
 
+/* ── vec<str> ────────────────────────────────────────────────────────────────── */
+#ifndef _CNDVEC_const_charptr
+#define _CNDVEC_const_charptr
+typedef struct _CndVec_const_charptr _CndVec_const_charptr;
+struct _CndVec_const_charptr { const char** _data; uint64_t _len; uint64_t _cap; };
+#endif
+
+/* ── map<str, i64> entry + map types (guard names match emitter output) ──────── */
+#ifndef _CNDMAP_FWD_const_charptr_int64_t
+#define _CNDMAP_FWD_const_charptr_int64_t
+typedef struct _CndMapEntry_const_charptr_int64_t _CndMapEntry_const_charptr_int64_t;
+typedef struct _CndMap_const_charptr_int64_t _CndMap_const_charptr_int64_t;
+struct _CndMap_const_charptr_int64_t { struct _CndMapEntry_const_charptr_int64_t** _buckets; uint64_t _cap; uint64_t _len; };
+#endif
+#ifndef _CNDMAP_ENTRY_const_charptr_int64_t
+#define _CNDMAP_ENTRY_const_charptr_int64_t
+struct _CndMapEntry_const_charptr_int64_t { const char* _key; int64_t _val; struct _CndMapEntry_const_charptr_int64_t* _next; };
+#endif
+
 /* ── map macros ─────────────────────────────────────────────────────────────── */
 #ifndef _CNDRES_int64_t_const_charptr
 #define _CNDRES_int64_t_const_charptr
@@ -260,7 +279,7 @@ static inline uint64_t _cnd_map_hash_str(const char* k) {
     uint64_t h = 5381; while (*k) h = ((h<<5)+h)^(unsigned char)*k++; return h;
 }
 #define _cnd_map_insert(mp, key, ...) __extension__ ({ \
-    __auto_type _mp=(mp); __auto_type _k=(key); __auto_type _v=(__VA_ARGS__); \
+    __typeof__(mp)* _mp=&(mp); __auto_type _k=(key); __auto_type _v=(__VA_ARGS__); \
     if(!_mp->_buckets||_mp->_len*4>=_mp->_cap*3){ \
         uint64_t _nc=_mp->_buckets?_mp->_cap*2:16; \
         __typeof__(*_mp->_buckets)* _nb=(__typeof__(*_mp->_buckets)*)calloc(_nc,sizeof(*_mp->_buckets)); \
@@ -271,7 +290,7 @@ static inline uint64_t _cnd_map_hash_str(const char* k) {
     __auto_type _en=_mp->_buckets[_bi];int _fd=0; \
     while(_en){if(strcmp(_en->_key,_k)==0){_en->_val=_v;_fd=1;break;}_en=_en->_next;} \
     if(!_fd){__auto_type _ne=(__typeof__(_mp->_buckets[0]))malloc(sizeof(*_mp->_buckets[0])); \
-        _ne->_key=_k;_ne->_val=_v;_ne->_next=_mp->_buckets[_bi];_mp->_buckets[_bi]=_ne;_mp->_len++;} \
+        _ne->_key=strdup(_k);_ne->_val=_v;_ne->_next=_mp->_buckets[_bi];_mp->_buckets[_bi]=_ne;_mp->_len++;} \
 })
 #define _cnd_map_get(m, key) __extension__ ({ \
     __auto_type _gm=(m);__auto_type _gk=(key); \
@@ -282,7 +301,7 @@ static inline uint64_t _cnd_map_hash_str(const char* k) {
     } _gr; \
 })
 #define _cnd_map_drop(mp) __extension__ ({ \
-    __auto_type _md=(mp); \
+    __typeof__(mp)* _md=&(mp); \
     if(_md->_buckets){ \
         for(uint64_t _di=0;_di<_md->_cap;_di++){ \
             __auto_type _de=_md->_buckets[_di]; \

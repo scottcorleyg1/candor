@@ -379,7 +379,7 @@ fn emit_call(c: box<CallExpr>, pp: str, rc: str) -> result<str, str> {
         let push_suffix = str_concat(a1, "); }))")
         return ok_s(str_concat("(__extension__ ({ __typeof__(", str_concat(a0, str_concat(")* _vp = &(", str_concat(a0, str_concat("); if (_vp->_len >= _vp->_cap) { uint64_t _nc = _vp->_cap ? _vp->_cap*2 : 4; _vp->_data = (__typeof__(_vp->_data))realloc(_vp->_data, _nc*sizeof(*_vp->_data)); _vp->_cap = _nc; } _vp->_data[_vp->_len++] = (", push_suffix))))))
     }
-    ## vec_pop(v) → last element via statement expression
+    ## vec_pop(v) → pops last element in-place (returns unit/void, discards value)
     if str_eq(bname, "vec_pop") and n_args >= 1 {
         let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
         let pop_suffix = str_concat(a0, "); assert(_vp->_len > 0); _vp->_data[--_vp->_len]; }))")
@@ -914,6 +914,10 @@ fn emit_terminal_body_str(body: Expr, pp: str, rc: str) -> result<str, str> {
                     let inner = emit_expr(inner_expr, pp, rc) must {
                         ok(v) => v   err(e) => return err(e)
                     }
+                    ## void expression in return context: int main → return 0; void fn → return;
+                    let is_void_val = str_eq(inner, "((void)0)") or str_eq(inner, "/* unit */0")
+                    if str_eq(rc, "int") and is_void_val { return ok_s("return 0;") }
+                    if str_eq(rc, "void") and is_void_val { return ok_s("return;") }
                     return ok_s(str_concat("return ", str_concat(inner, ";")))
                 }
             }

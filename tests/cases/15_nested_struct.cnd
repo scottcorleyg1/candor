@@ -1,0 +1,29 @@
+struct Vec2 {
+    x: i64,
+    y: i64
+}
+
+struct Rect {
+    origin: Vec2,
+    size: Vec2
+}
+
+fn area(r: Rect) -> i64 {
+    r.size.x * r.size.y
+}
+
+fn perimeter(r: Rect) -> i64 {
+    (r.size.x + r.size.y) * 2
+}
+
+fn main() -> unit {
+    let r = Rect{
+        origin: Vec2{ x: 1, y: 2 },
+        size:   Vec2{ x: 4, y: 5 }
+    }
+    print(_cnd_int_to_str(r.origin.x))
+    print(_cnd_int_to_str(r.origin.y))
+    print(_cnd_int_to_str(area(r)))
+    print(_cnd_int_to_str(perimeter(r)))
+    return unit
+}

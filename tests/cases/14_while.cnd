@@ -1,0 +1,20 @@
+fn collatz(n: i64) -> i64 {
+    let mut x: i64 = n
+    let mut steps: i64 = 0
+    while not (x == 1) {
+        if (x - (x / 2) * 2) == 0 {
+            x = x / 2
+        } else {
+            x = x * 3 + 1
+        }
+        steps = steps + 1
+    }
+    steps
+}
+
+fn main() -> unit {
+    print(_cnd_int_to_str(collatz(6)))
+    print(_cnd_int_to_str(collatz(1)))
+    print(_cnd_int_to_str(collatz(27)))
+    return unit
+}

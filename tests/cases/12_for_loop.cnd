@@ -1,0 +1,24 @@
+## Test Bug 12 fix: for x in v emits _iter._data[_i] inline
+fn main() -> unit {
+    let mut v: vec<i64> = vec_new()
+    vec_push(v, 1)
+    vec_push(v, 2)
+    vec_push(v, 3)
+    vec_push(v, 4)
+    vec_push(v, 5)
+
+    let mut sum: i64 = 0
+    for x in v {
+        sum = sum + x
+    }
+    print(_cnd_int_to_str(sum))
+
+    ## Also test for over vec<str>
+    let mut words: vec<str> = vec_new()
+    vec_push(words, "hello")
+    vec_push(words, "world")
+    for w in words {
+        print(w)
+    }
+    return unit
+}

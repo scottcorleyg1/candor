@@ -1,0 +1,19 @@
+struct Node {
+    val: i64,
+    next: i64
+}
+
+fn main() -> unit {
+    let b = box_new(Node{ val: 42, next: 0 })
+    let n = box_deref(b)
+    print(_cnd_int_to_str(n.val))
+
+    ## box of i64
+    let bi = box_new(99 as i64)
+    let v = box_deref(bi)
+    print(_cnd_int_to_str(v))
+
+    box_drop(b)
+    box_drop(bi)
+    return unit
+}

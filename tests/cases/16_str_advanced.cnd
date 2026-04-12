@@ -1,0 +1,38 @@
+fn main() -> unit {
+    ## str_trim
+    let s = str_trim("  hello  ")
+    print(s)
+
+    ## str_to_upper / str_to_lower
+    print(str_to_upper("hello"))
+    print(str_to_lower("WORLD"))
+
+    ## str_replace
+    let r = str_replace("foo bar foo", "foo", "baz")
+    print(r)
+
+    ## str_starts_with
+    if str_starts_with("candor", "can") {
+        print("yes")
+    }
+
+    ## str_find — present
+    let pos = str_find("hello world", "world", 0) must {
+        some(i) => i
+        none    => return unit
+    }
+    print(_cnd_int_to_str(pos))
+
+    ## str_find — absent returns none
+    let pos2 = str_find("hello", "xyz", 0)
+    match pos2 {
+        some(i) => print(_cnd_int_to_str(i))
+        none    => print("not found")
+    }
+
+    ## str_substr
+    let sub = str_substr("abcdef", 2, 3)
+    print(sub)
+
+    return unit
+}

@@ -1,0 +1,31 @@
+fn main() -> unit {
+    let mut m: map<str, i64> = map_new()
+    map_insert(m, "a", 1)
+    map_insert(m, "b", 2)
+    map_insert(m, "c", 3)
+
+    ## contains check
+    if map_contains(m, "b") {
+        print("has b")
+    }
+    if not map_contains(m, "z") {
+        print("no z")
+    }
+
+    ## get existing key
+    let va = map_get(m, "a") must {
+        some(v) => v
+        none    => return unit
+    }
+    print(_cnd_int_to_str(va))
+
+    ## get missing key returns none
+    let vz = map_get(m, "z")
+    match vz {
+        some(v) => print(_cnd_int_to_str(v))
+        none    => print("missing")
+    }
+
+    map_drop(m)
+    return unit
+}

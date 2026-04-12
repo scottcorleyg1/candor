@@ -1,0 +1,29 @@
+struct Counter {
+    n: i64,
+    total: i64
+}
+
+fn increment(c: refmut<Counter>) -> unit {
+    c.n = c.n + 1
+    return unit
+}
+
+fn add_to(c: refmut<Counter>, x: i64) -> unit {
+    c.total = c.total + x
+    return unit
+}
+
+fn main() -> unit {
+    let mut c = Counter{ n: 0, total: 0 }
+    increment(refmut(c))
+    increment(refmut(c))
+    increment(refmut(c))
+    print(_cnd_int_to_str(c.n))
+
+    add_to(refmut(c), 10)
+    add_to(refmut(c), 20)
+    add_to(refmut(c), 30)
+    print(_cnd_int_to_str(c.total))
+
+    return unit
+}

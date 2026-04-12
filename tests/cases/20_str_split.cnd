@@ -1,0 +1,16 @@
+fn main() -> unit {
+    let parts = str_split("a,b,c,d", ",")
+    print(_cnd_int_to_str(vec_len(parts) as i64))
+    for p in parts {
+        print(p)
+    }
+
+    ## split on multi-char separator
+    let words = str_split("one::two::three", "::")
+    print(_cnd_int_to_str(vec_len(words) as i64))
+    for w in words {
+        print(w)
+    }
+
+    return unit
+}
