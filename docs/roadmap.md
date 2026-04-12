@@ -892,6 +892,136 @@ Mythos finds most frequently. That is a research partnership conversation.
 
 ---
 
+---
+
+## M12 — Audit Emission (`candorc --emit=audit`)
+
+> Goal: give skeptics a path to audit Candor output in a language they already know,
+> and a machine-readable report of exactly what Candor gave them that the target language
+> cannot express. Trust by design, demonstrable on your own code.
+
+### The two-output model
+
+Every `--emit=<lang>` invocation produces two files:
+
+1. **`output.<ext>`** — the program logic in a valid, compilable target language
+2. **`output.audit.md`** — a structured report of every Candor feature that has no equivalent in the target, with line-number references back to the Candor source
+
+The audit report is not a limitation list. It is the trust argument made concrete against the user's own code: "here is what you got in Candor that the target language silently dropped."
+
+---
+
+### M12.1 — C audit report (`candorc --emit=c-audit`)
+
+**Why C first:** the C emitter already exists and is verified by the bootstrap. No new emitter work is required. The audit report is the only new output.
+
+The C emitter already maps Candor to C correctly. What it cannot express:
+
+| Candor feature | C equivalent | What is lost |
+|----------------|-------------|--------------|
+| `effects(fs)` | none — dropped | Compiler cannot enforce filesystem access boundaries |
+| `effects(network)` | none — dropped | No structural proof network calls are declared |
+| `requires b != 0` | `assert(b != 0)` | Precondition is a runtime check, not a signature declaration |
+| `ensures result >= 0` | `assert(result >= 0)` | Postcondition is a runtime check; not visible to callers |
+| `must{}` on result | `if (_ok) {...} else {...}` | C cannot enforce that callers handle both arms; silence is valid |
+| `secret<T>` | `T` — dropped | No information-flow enforcement; value can be logged or printed |
+| `pure` | none | No compiler enforcement that the function has no side effects |
+
+**Report format:**
+
+```markdown
+## Candor → C Audit Report: divide.cnd
+
+### Converted: 3 functions, 1 struct
+
+### Features with no C equivalent
+
+**effects declarations — 2 instances**
+  fn read_config(path: str) effects(fs) — line 4
+  fn post_result(url: str) effects(network) — line 12
+  C equivalent: none (dropped).
+  What Candor enforces: only functions declaring effects(fs) can touch
+  the filesystem. In C, any function can call fopen() silently.
+
+**requires clauses — 1 instance**
+  requires b != 0 on divide(a, b) — line 8
+  C equivalent: assert(b != 0) in debug builds.
+  What Candor enforces: precondition is in the function signature —
+  visible to every caller and every AI agent without reading the body.
+  In C, assert() can be compiled out with NDEBUG; no caller visibility.
+
+**must{} error handling — 3 instances**
+  Lines 15, 22, 31
+  C equivalent: if (_ok) { ... } else { ... }
+  What Candor enforces: discarding a result<T,E> is a compile error.
+  In C, the caller can ignore the return value with no warning.
+```
+
+**Definition of done:**
+- `candorc --emit=c-audit file.cnd` produces `file.c` and `file.audit.md`
+- Report covers: effects, requires/ensures, must{}, secret<T>, pure declarations
+- Each entry includes: Candor source line, C equivalent (or "none"), one-sentence explanation
+- Report compiles as valid Markdown; JSON variant (`--emit=c-audit-json`) for tooling
+
+---
+
+### M12.2 — Go emitter (`candorc --emit=go`)
+
+Go is the most natural audit target for the current audience: systems programmers who read Go fluently but may not know C.
+
+**What maps cleanly:**
+
+| Candor | Go |
+|--------|-----|
+| `struct` | `struct` |
+| `fn f(a: i64) -> i64` | `func f(a int64) int64` |
+| `vec<T>` | `[]T` |
+| `map<K,V>` | `map[K]V` |
+| `option<T>` | `*T` (nil = none) |
+| `result<T,E>` | `(T, error)` |
+| `must{}` on result | `if err != nil { ... }` (bypassable — noted in report) |
+| `match` | `switch` |
+| `loop` / `while` / `for x in v` | `for` |
+| `enum` with data | `interface{}` + type switches |
+
+**What goes in the audit report (same structure as M12.1):**
+- `effects(...)` → dropped; report explains what the compiler enforced
+- `requires`/`ensures` → Go comment `// requires: b != 0`; report notes it is not enforced
+- `must{}` → `if err != nil` but Go allows `_, err = f()` silence; report flags this
+- `pure` → dropped; no Go equivalent
+- `secret<T>` → `T`; report notes information-flow enforcement is gone
+
+**Definition of done:**
+- `candorc --emit=go file.cnd` produces `file.go` (compilable with `go build`) and `file.audit.md`
+- Emitted Go passes `go vet` with no errors
+- Report format matches M12.1 structure
+
+---
+
+### M12.3 — Rust emitter (`candorc --emit=rust`) *(lower priority)*
+
+Rust is the hardest target. Candor's ownership model does not map cleanly to Rust's borrow checker — emitted Rust will be valid but non-idiomatic (heavy use of `clone()`, `Box<T>`, `Rc<RefCell<T>>`). The audit report is the same structure.
+
+Deferred until M12.1 and M12.2 are complete and the report format is validated.
+
+---
+
+### Implementation order
+
+```
+M12.1  C audit report    ── no new emitter; proves report design  ──► M12.2
+M12.2  Go emitter        ── new backend; same report format
+M12.3  Rust emitter      ── after M12.2; hardest target
+```
+
+M12.1 is the right starting point: zero emitter risk, validates the report format against real code, and produces a demo artifact immediately useful for Reddit/outreach.
+
+---
+
+*M12 added 2026-04-12. Motivated by the trust argument: skeptics need a path to audit in a language they know. The audit report turns the gap between Candor and the target into explicit, per-line documentation of what structural safety they would lose.*
+
+---
+
 *Candor is open source. This roadmap reflects current priorities and will shift as the language
 grows. The bootstrapping path (M9) is aspirational — every step is independently useful even
 if full self-hosting is years away.*
