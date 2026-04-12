@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Scott W. Corley
 // SPDX-License-Identifier: Apache-2.0
-// https://github.com/scottcorleyg1/candor
+// https://github.com/candor-core/candor
 
 package parser
 
 import (
 	"testing"
 
-	"github.com/scottcorleyg1/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/lexer"
 )
 
 // parse is a test helper: lex + parse src, fatal on any error.

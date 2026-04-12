@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Scott W. Corley
 // SPDX-License-Identifier: Apache-2.0
-// https://github.com/scottcorleyg1/candor
+// https://github.com/candor-core/candor
 
 // Integration tests for candorc v0.0.1.
 // Each test writes a .cnd file to a temp directory, runs the full pipeline
@@ -16,10 +16,10 @@ import (
 	"strings"
 	"testing"
 
-	emit_c "github.com/scottcorleyg1/candor/compiler/emit_c"
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	emit_c "github.com/candor-core/candor/compiler/emit_c"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 // compile runs the full candorc pipeline on src, writes a binary to dir,

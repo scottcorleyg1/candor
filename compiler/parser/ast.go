@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Scott W. Corley
 // SPDX-License-Identifier: Apache-2.0
-// https://github.com/scottcorleyg1/candor
+// https://github.com/candor-core/candor
 
 package parser
 
-import "github.com/scottcorleyg1/candor/compiler/lexer"
+import "github.com/candor-core/candor/compiler/lexer"
 
 // Node is the base interface for all AST nodes.
 // Every node records its opening token for source position reporting.

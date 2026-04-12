@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scottcorleyg1/candor/compiler/lsp"
+	"github.com/candor-core/candor/compiler/lsp"
 )
 
 // rpcFrame wraps a JSON body in LSP Content-Length framing.

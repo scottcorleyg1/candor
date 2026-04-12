@@ -26,8 +26,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 // EmitLLVM produces textual LLVM IR from a type-checked Candor AST.

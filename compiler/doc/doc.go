@@ -14,7 +14,7 @@ import (
 	"html"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/parser"
 )
 
 // ExtractDocComments scans raw Candor source and returns a map from

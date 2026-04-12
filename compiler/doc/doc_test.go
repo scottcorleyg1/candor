@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/parser"
 )
 
 // ── ExtractDocComments ────────────────────────────────────────────────────────

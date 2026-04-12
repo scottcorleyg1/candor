@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Scott W. Corley
 // SPDX-License-Identifier: Apache-2.0
-// https://github.com/scottcorleyg1/candor
+// https://github.com/candor-core/candor
 
 // Package emit_c emits valid C from a type-checked Candor AST.
 //
@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 // Emit translates a type-checked Candor file to a C source string.

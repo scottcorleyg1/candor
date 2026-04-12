@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Scott W. Corley
 // SPDX-License-Identifier: Apache-2.0
-// https://github.com/scottcorleyg1/candor
+// https://github.com/candor-core/candor
 
 // Package parser produces a typed AST from the Candor Core grammar.
 // Input is a token slice from the lexer. Output is a *File AST root.
@@ -23,7 +23,7 @@ package parser
 import (
 	"fmt"
 
-	"github.com/scottcorleyg1/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/lexer"
 )
 
 // Error is a parse error with source position.

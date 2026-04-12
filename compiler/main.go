@@ -12,16 +12,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	emit_c "github.com/scottcorleyg1/candor/compiler/emit_c"
-	"github.com/scottcorleyg1/candor/compiler/cheader"
-	"github.com/scottcorleyg1/candor/compiler/diagnostics"
-	"github.com/scottcorleyg1/candor/compiler/doc"
-	"github.com/scottcorleyg1/candor/compiler/emit_llvm"
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/lsp"
-	"github.com/scottcorleyg1/candor/compiler/manifest"
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	emit_c "github.com/candor-core/candor/compiler/emit_c"
+	"github.com/candor-core/candor/compiler/cheader"
+	"github.com/candor-core/candor/compiler/diagnostics"
+	"github.com/candor-core/candor/compiler/doc"
+	"github.com/candor-core/candor/compiler/emit_llvm"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/lsp"
+	"github.com/candor-core/candor/compiler/manifest"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 const usage = `Candor compiler toolchain

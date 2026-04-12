@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/parser"
 )
 
 // FormatCandor returns a canonical formatted version of the parsed file.

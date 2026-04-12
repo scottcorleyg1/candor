@@ -1,3 +1,3 @@
-module github.com/scottcorleyg1/candor/compiler
+module github.com/candor-core/candor/compiler
 
 go 1.24

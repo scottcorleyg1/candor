@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scottcorleyg1/candor/compiler/emit_llvm"
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	"github.com/candor-core/candor/compiler/emit_llvm"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 func compileLL(t *testing.T, src string) string {

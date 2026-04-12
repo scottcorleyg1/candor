@@ -1,7 +1,7 @@
 # Candor Language Reference
 
-**Compiler version:** v0.0.1
-**Go module:** `github.com/scottcorleyg1/candor/compiler`
+**Compiler version:** v0.3.0
+**Go module:** `github.com/candor-core/candor/compiler`
 **Pipeline:** `.cnd` source → lex → parse → typeck → emit C → gcc/cc → binary
 
 This is the primary reference for programmers writing Candor. It covers all syntax, semantics, types, operators, built-in functions, and known limitations of the current compiler.

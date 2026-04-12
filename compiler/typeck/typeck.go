@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Scott W. Corley
 // SPDX-License-Identifier: Apache-2.0
-// https://github.com/scottcorleyg1/candor
+// https://github.com/candor-core/candor
 
 // Package typeck performs Core type checking on a parsed Candor AST.
 //
@@ -22,8 +22,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/parser"
 )
 
 // Error is a type-check diagnostic with source position.

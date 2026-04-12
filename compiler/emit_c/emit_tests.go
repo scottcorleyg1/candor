@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 // EmitTests emits a C translation unit that runs all #test-annotated functions

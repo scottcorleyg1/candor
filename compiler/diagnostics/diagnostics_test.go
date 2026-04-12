@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scottcorleyg1/candor/compiler/diagnostics"
+	"github.com/candor-core/candor/compiler/diagnostics"
 )
 
 func TestRenderError_WithSnippet(t *testing.T) {

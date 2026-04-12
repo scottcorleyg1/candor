@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scottcorleyg1/candor/compiler/manifest"
+	"github.com/candor-core/candor/compiler/manifest"
 )
 
 func writeManifest(t *testing.T, content string) string {

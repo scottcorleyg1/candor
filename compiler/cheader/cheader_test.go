@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scottcorleyg1/candor/compiler/cheader"
+	"github.com/candor-core/candor/compiler/cheader"
 )
 
 func writeHeader(t *testing.T, content string) string {

@@ -16,10 +16,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/scottcorleyg1/candor/compiler/diagnostics"
-	"github.com/scottcorleyg1/candor/compiler/lexer"
-	"github.com/scottcorleyg1/candor/compiler/parser"
-	"github.com/scottcorleyg1/candor/compiler/typeck"
+	"github.com/candor-core/candor/compiler/diagnostics"
+	"github.com/candor-core/candor/compiler/lexer"
+	"github.com/candor-core/candor/compiler/parser"
+	"github.com/candor-core/candor/compiler/typeck"
 )
 
 // ── JSON-RPC types ─────────────────────────────────────────────────────────────
