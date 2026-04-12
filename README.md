@@ -388,7 +388,7 @@ The Go compiler is the full-featured reference implementation. It accepts `.cnd`
 | secret\<T\> information-flow enforcement | Complete |
 | MCP tool annotations (#mcp_tool) | Complete |
 | LSP server (diagnostics, hover, completion) | Complete |
-| set\<T\> | Not yet |
+| set\<T\> | Complete |
 | Allocator layer | Future |
 
 ### Candor Self-Hosted Compiler — Bootstrap

@@ -1,0 +1,32 @@
+fn main() -> unit {
+    let mut s: set<str> = set_new()
+
+    ## add elements
+    set_add(s, "apple")
+    set_add(s, "banana")
+    set_add(s, "cherry")
+
+    ## length after adds
+    print(_cnd_int_to_str(set_len(s)))
+
+    ## contains checks
+    if set_contains(s, "banana") {
+        print("has banana")
+    }
+    if not set_contains(s, "grape") {
+        print("no grape")
+    }
+
+    ## remove and recheck
+    set_remove(s, "banana")
+    if not set_contains(s, "banana") {
+        print("banana gone")
+    }
+    print(_cnd_int_to_str(set_len(s)))
+
+    ## duplicate add — length should not change
+    set_add(s, "apple")
+    print(_cnd_int_to_str(set_len(s)))
+
+    return unit
+}

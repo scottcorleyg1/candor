@@ -151,6 +151,7 @@ fn emit_type_gen(g: box<GenTy>) -> str {
         }
     }
     if str_eq(nm, "task") { return str_concat("_CndTask_", mangle_ctype(p0)) }
+    if str_eq(nm, "set") { return str_concat("_CndSet_", mangle_ctype(p0)) }
     if argc >= 2 {
         let p1 = emit_type(gt.args[1])
         if str_eq(nm, "map") {
@@ -586,6 +587,31 @@ fn emit_call(c: box<CallExpr>, pp: str, rc: str) -> result<str, str> {
         let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
         let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
         return ok_s(str_concat("_cnd_map_contains(", str_concat(a0, str_concat(", ", str_concat(a1, ")")))))
+    }
+    ## set_new() → zero-initialised struct literal {0}
+    if str_eq(bname, "set_new") { return ok_s("{0}") }
+    ## set_add(s, v) → _cnd_set_add(s, v)
+    if str_eq(bname, "set_add") and n_args >= 2 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        return ok_s(str_concat("_cnd_set_add(", str_concat(a0, str_concat(", ", str_concat(a1, ")")))))
+    }
+    ## set_remove(s, v) → _cnd_set_remove(s, v)
+    if str_eq(bname, "set_remove") and n_args >= 2 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        return ok_s(str_concat("_cnd_set_remove(", str_concat(a0, str_concat(", ", str_concat(a1, ")")))))
+    }
+    ## set_contains(s, v) → _cnd_set_contains(s, v)
+    if str_eq(bname, "set_contains") and n_args >= 2 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        let a1 = emit_expr(ce.args[1 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        return ok_s(str_concat("_cnd_set_contains(", str_concat(a0, str_concat(", ", str_concat(a1, ")")))))
+    }
+    ## set_len(s) → (s)._len
+    if str_eq(bname, "set_len") and n_args >= 1 {
+        let a0 = emit_expr(ce.args[0 as u64], pp, rc) must { ok(v) => v  err(e) => return err(e) }
+        return ok_s(str_concat("(", str_concat(a0, ")._len")))
     }
     ## os_args() → build vec<str> from _cnd_argc/_cnd_argv
     if str_eq(bname, "os_args") {

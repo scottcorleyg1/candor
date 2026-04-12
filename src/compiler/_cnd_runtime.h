@@ -316,3 +316,58 @@ static inline uint64_t _cnd_map_hash_str(const char* k) {
         while(_ce){if(strcmp(_ce->_key,_ck)==0){_cr=1;break;}_ce=_ce->_next;}} \
     _cr; \
 })
+
+/* ── set<str> type ──────────────────────────────────────────────────────────── */
+#ifndef _CNDSET_FWD_const_charptr
+#define _CNDSET_FWD_const_charptr
+typedef struct _CndSetBucket_const_charptr _CndSetBucket_const_charptr;
+typedef struct _CndSet_const_charptr _CndSet_const_charptr;
+struct _CndSet_const_charptr { struct _CndSetBucket_const_charptr** _buckets; uint64_t _cap; uint64_t _len; };
+#endif
+#ifndef _CNDSET_BUCKET_const_charptr
+#define _CNDSET_BUCKET_const_charptr
+struct _CndSetBucket_const_charptr { const char* _key; struct _CndSetBucket_const_charptr* _next; };
+#endif
+
+/* ── set macros ─────────────────────────────────────────────────────────────── */
+#define _cnd_set_add(sp, key) __extension__ ({ \
+    __typeof__(sp)* _sp=&(sp); __auto_type _k=(key); \
+    if(!_sp->_buckets||_sp->_len*4>=_sp->_cap*3){ \
+        uint64_t _nc=_sp->_buckets?_sp->_cap*2:16; \
+        __typeof__(*_sp->_buckets)* _nb=(__typeof__(*_sp->_buckets)*)calloc(_nc,sizeof(*_sp->_buckets)); \
+        for(uint64_t _ri=0;_ri<_sp->_cap;_ri++){__auto_type _re=_sp->_buckets[_ri]; \
+            while(_re){__auto_type _rn=_re->_next;uint64_t _rb=_cnd_map_hash_str(_re->_key)%_nc;_re->_next=_nb[_rb];_nb[_rb]=_re;_re=_rn;}} \
+        free(_sp->_buckets);_sp->_buckets=_nb;_sp->_cap=_nc;} \
+    uint64_t _bi=_cnd_map_hash_str(_k)%_sp->_cap; \
+    __auto_type _en=_sp->_buckets[_bi];int _fd=0; \
+    while(_en){if(strcmp(_en->_key,_k)==0){_fd=1;break;}_en=_en->_next;} \
+    if(!_fd){__auto_type _ne=(__typeof__(_sp->_buckets[0]))malloc(sizeof(*_sp->_buckets[0])); \
+        _ne->_key=strdup(_k);_ne->_next=_sp->_buckets[_bi];_sp->_buckets[_bi]=_ne;_sp->_len++;} \
+})
+#define _cnd_set_remove(sp, key) __extension__ ({ \
+    __typeof__(sp)* _sp=&(sp); __auto_type _k=(key); int _r=0; \
+    if(_sp->_buckets){uint64_t _bi=_cnd_map_hash_str(_k)%_sp->_cap; \
+        __auto_type _prev=(__typeof__(_sp->_buckets[0]))NULL; \
+        __auto_type _cur=_sp->_buckets[_bi]; \
+        while(_cur){if(strcmp(_cur->_key,_k)==0){if(_prev)_prev->_next=_cur->_next;else _sp->_buckets[_bi]=_cur->_next;free((void*)_cur->_key);free(_cur);_sp->_len--;_r=1;break;}_prev=_cur;_cur=_cur->_next;}} \
+    _r; \
+})
+#define _cnd_set_contains(s, key) __extension__ ({ \
+    __auto_type _cs=(s);__auto_type _ck=(key);int _cr=0; \
+    if(_cs._buckets){uint64_t _cb=_cnd_map_hash_str(_ck)%_cs._cap; \
+        __auto_type _ce=_cs._buckets[_cb]; \
+        while(_ce){if(strcmp(_ce->_key,_ck)==0){_cr=1;break;}_ce=_ce->_next;}} \
+    _cr; \
+})
+
+/* ── set compatibility shims for current lexer.exe emitter output ─────────── */
+/* The current self-hosted emitter uses _Cnd_set_EC and bare set_new/add/etc. */
+/* These aliases let compiled output work until lexer.exe is rebuilt.         */
+typedef _CndSet_const_charptr _Cnd_set_const_charptr;
+static inline _Cnd_set_const_charptr set_new(void) {
+    _Cnd_set_const_charptr s = {0}; return s;
+}
+#define set_add(s, k)       _cnd_set_add(s, k)
+#define set_remove(s, k)    _cnd_set_remove(s, k)
+#define set_contains(s, k)  _cnd_set_contains(s, k)
+#define set_len(s)          ((s)._len)
