@@ -37,3 +37,12 @@ candorc
 **/*.exe
 *.txt
 /tools/
+
+# Local working notes (not for the repo)
+RENAME_CHECKLIST.md
+
+# AI session data (Claude Code worktrees, memory, internal context)
+.claude/
+
+# Test runner scratch output
+tmp/
