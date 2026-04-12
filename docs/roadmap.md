@@ -794,6 +794,104 @@ Goal  ──── M9.15  Stage 2 self-hosting (stage1 compiles itself, diff pro
 
 ---
 
+## Security Posture — Response to Mythos / Project Glasswing (April 2026)
+
+In April 2026, Anthropic demonstrated that frontier AI models can find and chain software
+vulnerabilities that survived decades of human review and millions of automated tests.
+This changes the threat model for CandorCore and accelerates several roadmap items.
+The items below are ordered by priority.
+
+### HIGH — Implement Now
+
+**M-SEC-1: Signed revocation list in the runtime (near-term design item)**
+The runtime flag system (hard block on malicious modules) must propagate fast and be
+verifiable without network access. Design and implement a signed revocation list format
+that ships with runtime updates — similar to TLS certificate revocation lists. A
+Mythos-class supply chain attack can move faster than a human can respond; the runtime
+needs to be able to check flags offline.
+- Design the revocation list format and signing scheme
+- Wire it into the runtime execution path
+- Define the update cadence and distribution mechanism
+
+**M-SEC-2: Mythos scan as mandatory cert audit step**
+The certification checklist (docs/certification_checklist.md) Section 5 covers security
+baseline manually. Add Section 5a: automated vulnerability scan using current best
+available tooling. As Glasswing access becomes available, that tooling becomes Mythos.
+The checklist already has the hook — this item wires it.
+- Update certification_checklist.md with Section 5a placeholder
+- Define the scan scope (effects violations, undeclared network calls, injection vectors)
+- Establish the tooling baseline (static analysis minimum; Mythos scan when available)
+
+**M-SEC-3: Verify `secret<T>` implementation is airtight**
+`secret<T>` is listed as Complete in the status table. Before any security partnership
+conversation or public security claim, the implementation must be audited to verify
+secrets cannot leak through declared channels. A Mythos-class tool would find it
+immediately if they can.
+- Audit current `secret<T>` implementation against known leak patterns
+- Add test cases specifically probing secret propagation through effects boundaries
+- Document verified guarantees and remaining limitations honestly
+
+---
+
+### MEDIUM — Design and Roadmap
+
+**M-SEC-4: `effects(security)` granular effect tags**
+Mythos exploits by chaining vulnerabilities across trust boundaries. The current effects
+system covers *what* a function touches. This extends it to *how sensitive* that boundary
+is. Proposed additions: `effects(crypto)`, `effects(auth)`, `effects(boundary)`.
+A function handling authentication tokens or validating input at a trust boundary is
+structurally different from one that writes a log file — the compiler should know.
+- Define the security effect tier semantics
+- Add to KnownEffects in the compiler
+- Update syntax_and_builtins.md and the spec
+
+**M-SEC-5: Dependency graph machine-readable format for tooling**
+Transitive dependency vulnerability chaining is a realistic attack vector. A compromised
+module three levels deep that chains with a vulnerability in your module is how Mythos
+operates. The dependency graph must be fully declared and machine-readable so security
+tooling can traverse it automatically.
+- Define the manifest format for declaring transitive dependencies
+- Ensure the cert audit checklist requires full dependency graph declaration
+- Build tooling to verify the declared graph matches the actual import graph
+
+**M-SEC-6: Partner onboarding process documented before first outreach**
+Before any conversation with Glasswing or similar initiatives, the `ccPar-` partner
+onboarding process must exist in writing. The naming convention doc defines the tier;
+this item defines the process: how a vendor goes from zero to ccPar-Name, what they
+agree to, what Core commits to in return.
+- Draft the partner onboarding document
+- Define the legal/agreement baseline for ccPar- status
+- Cross-reference with the certification checklist partner tier
+
+---
+
+### LOWER — Longer Term
+
+**M-SEC-7: Key management and signing infrastructure**
+Core holds the signing key for all certs. This item covers: key generation and storage,
+rotation cadence, compromise procedure (pre-written playbook), multi-party authorization
+for cert issuance and module flagging, revocation infrastructure.
+- Write the key compromise playbook before the ecosystem is live
+- Define multi-party authorization requirements (minimum two-party for flags and revocations)
+- Add to the roadmap as a hard prerequisite before the first external cert is issued
+
+**M-SEC-8: Project Glasswing formal outreach**
+CandorCore is one of the few languages being designed with AI-assisted security auditing
+in mind. Glasswing's mandate is securing critical open-source software. The conversation
+worth having: Candor's effects system structurally prevents the vulnerability classes
+Mythos finds most frequently. That is a research partnership conversation.
+- Complete M-SEC-3 (`secret<T>` audit) first
+- Prepare a one-page technical brief: five common Mythos-found vulnerability classes
+  mapped to Candor language features that prevent them
+- Contact: red.anthropic.com technical team (not business development)
+- Target: research conversation, not a vendor relationship or funding ask
+
+---
+
+*Security posture items added 2026-04-11 in response to Anthropic Mythos / Project Glasswing.*
+
+---
+
 *Candor is open source. This roadmap reflects current priorities and will shift as the language
 grows. The bootstrapping path (M9) is aspirational — every step is independently useful even
 if full self-hosting is years away.*

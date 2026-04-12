@@ -64,15 +64,13 @@ Check `str_substr(e_str, e_len - vs_len, vs_len)` against `"((void)0);\n}))"`. I
 
 ## Bug 5 — `redefinition of '_t'` + cascading `_m undeclared`, `v undeclared`
 **First documented by Gemini: 2026-04-04**  
-**Status: Not yet fixed in Go emitter**
+**Status: Fixed — verified 2026-04-10**
 
-**Symptoms:** Multiple `auto _t = ...` in the same C scope, then cascade of undeclared variables.
+**Symptoms (historical):** Multiple `auto _t = ...` in the same C scope, then cascade of undeclared variables.
 
-**Root cause:** Go emitter `emitMustOrMatch()` in `compiler/emit_c/emit_c.go` uses `e.freshTmp()` for the must subject (`_m`) but hardcodes `_t` for the outer let-binding of the must result. Two must-expressions in the same C scope both emit `auto _t = ...`.
+**Root cause (historical):** Go emitter `emitMustOrMatch()` used `e.freshTmp()` for the must subject but hardcoded `_t` for the outer binding. Two must-expressions in the same C scope both emitted `auto _t = ...`.
 
-**Fix:** Use `e.freshTmp()` for the outer binding around line 5458, or wrap each must result in an inner `{ }` C scope. Tracked in TASK-02.
-
-**Note:** The Candor emitter (`emit_c.cnd`) avoids this — it emits must expressions as inline `__extension__` statement-expressions, not as `auto _t = ...` bindings.
+**Fix:** `emitMustOrMatch()` now calls `e.freshTmp()` for both `tmp` (the subject) and `res` (the result binding). Confirmed: two `must` expressions in the same function emit distinct `_cnd1`, `_cnd2`, `_cnd3`, `_cnd4` with zero redefinition conflicts.
 
 ---
 

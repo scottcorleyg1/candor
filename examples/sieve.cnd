@@ -38,6 +38,6 @@ fn sieve(n: i64) -> i64 {
 
 fn main() -> unit {
     let count = sieve(10000000)
-    print_int(count)
+    print(_cnd_int_to_str(count))
     return unit
 }

@@ -16,7 +16,7 @@
 | Compiler architecture | [`docs/compiler_architecture.md`](docs/compiler_architecture.md) | 5-pass emission order |
 | Syntax + builtins | [`docs/syntax_and_builtins.md`](docs/syntax_and_builtins.md) | Candor language cheat sheet |
 | Known bugs | [`docs/known_compiler_bugs.md`](docs/known_compiler_bugs.md) | GCC error patterns + root causes |
-| Language context | [`docs/context.md`](docs/context.md) | Repo layout, pipeline, type system (updated 2026-03-18) |
+| Language context | [`docs/internal/context.md`](docs/internal/context.md) | Repo layout, pipeline, type system (updated 2026-03-18) |
 | Roadmap | [`docs/roadmap.md`](docs/roadmap.md) | Milestone history |
 
 ---

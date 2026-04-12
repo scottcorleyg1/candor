@@ -5,7 +5,7 @@
 
 ## What This Project Is
 
-**Candor** is a new systems programming language being designed and built by Scott W. Corley (© 2026, Apache 2.0). The GitHub repo is `scottcorleyg1/candor`.
+**Candor** is a new systems programming language being designed and built by Scott W. Corley (© 2026, Apache 2.0). The GitHub repo is `candor-core/candor`.
 
 The compiler is called `candorc`. **It exists and works.** Version 0.0.1 is complete. It compiles real `.cnd` programs to binaries via a C transpilation pipeline.
 
