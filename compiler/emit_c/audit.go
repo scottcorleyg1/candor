@@ -20,6 +20,7 @@ type AuditEntry struct {
 // AuditLog accumulates entries during C emission.
 type AuditLog struct {
 	SourceFile string
+	Target     string // "C" or "Go" — used in the report header
 	Entries    []AuditEntry
 }
 
@@ -27,11 +28,30 @@ func (l *AuditLog) add(e AuditEntry) {
 	l.Entries = append(l.Entries, e)
 }
 
+// NewAuditLog creates an AuditLog ready for use outside this package.
+func NewAuditLog(sourceFile string) *AuditLog {
+	return &AuditLog{SourceFile: sourceFile, Target: "C"}
+}
+
+// NewAuditLogGo creates an AuditLog for the Go emitter.
+func NewAuditLogGo(sourceFile string) *AuditLog {
+	return &AuditLog{SourceFile: sourceFile, Target: "Go"}
+}
+
+// AddEntry appends an entry (exported for use by other emit packages).
+func (l *AuditLog) AddEntry(e AuditEntry) {
+	l.Entries = append(l.Entries, e)
+}
+
 // RenderMarkdown produces the audit report as a Markdown string.
 func (l *AuditLog) RenderMarkdown() string {
 	var sb strings.Builder
 
-	sb.WriteString("## Candor → C Audit Report\n\n")
+	target := l.Target
+	if target == "" {
+		target = "C"
+	}
+	fmt.Fprintf(&sb, "## Candor → %s Audit Report\n\n", target)
 	fmt.Fprintf(&sb, "**Source:** `%s`\n\n", l.SourceFile)
 
 	// Defined order for categories in the report.
@@ -46,7 +66,7 @@ func (l *AuditLog) RenderMarkdown() string {
 
 	if totalEntries == 0 {
 		sb.WriteString("No Candor-specific safety features were found in this file.\n")
-		sb.WriteString("The C output is structurally equivalent to the Candor source.\n")
+		fmt.Fprintf(&sb, "The %s output is structurally equivalent to the Candor source.\n", target)
 		return sb.String()
 	}
 
@@ -104,10 +124,10 @@ func (l *AuditLog) RenderMarkdown() string {
 			categoryTitle(cat), len(entries), cEnforcementSummary[cat])
 	}
 
-	sb.WriteString("\n**What the C output cannot tell you:** whether this program respects ")
+	fmt.Fprintf(&sb, "\n**What the %s output cannot tell you:** whether this program respects ", target)
 	sb.WriteString("its own effect boundaries, whether callers can ignore errors, or whether ")
 	sb.WriteString("preconditions hold at every call site. Those properties exist in the ")
-	sb.WriteString("Candor source. They do not exist in the C output.\n")
+	fmt.Fprintf(&sb, "Candor source. They do not exist in the %s output.\n", target)
 
 	return sb.String()
 }

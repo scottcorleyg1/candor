@@ -1,0 +1,91 @@
+## safety_demo.cnd
+## Showcases Candor's safety annotations: effects, pure, requires/ensures, must{}
+## Compile to C:  candorc examples/safety_demo.cnd
+## Emit to Go:    candorc emit-go examples/safety_demo.cnd
+
+## ── types ────────────────────────────────────────────────────────────────────
+
+struct Account {
+    name:    str
+    balance: i64
+}
+
+## ── pure math ─────────────────────────────────────────────────────────────────
+
+## pure declares no side effects — enforced at compile time.
+## Any call to a non-pure function inside here is a compile error.
+fn add(a: i64, b: i64) -> i64 pure
+    requires a >= 0
+    requires b >= 0
+{
+    a + b
+}
+
+## ── I/O effects ───────────────────────────────────────────────────────────────
+
+## effects(io) declares this function performs I/O — callers must also declare it
+## (or be marked effects(io)) to call it.
+fn show_account(acc: Account) -> unit effects(io) {
+    print(str_concat("Account: ", acc.name))
+    print(str_concat("Balance: ", int_to_str(acc.balance)))
+    return unit
+}
+
+## ── fallible operations ───────────────────────────────────────────────────────
+
+fn deposit(acc: Account, amount: i64) -> result<Account, str>
+    requires amount > 0
+{
+    if amount <= 0 {
+        return err(str_concat("invalid deposit amount: ", int_to_str(amount)))
+    }
+    let new_balance = add(acc.balance, amount)
+    ok(Account { name: acc.name, balance: new_balance })
+}
+
+fn withdraw(acc: Account, amount: i64) -> result<Account, str>
+    requires amount > 0
+{
+    if amount > acc.balance {
+        return err(str_concat("insufficient funds, have: ", int_to_str(acc.balance)))
+    }
+    ok(Account { name: acc.name, balance: acc.balance - amount })
+}
+
+## ── must{} error propagation ──────────────────────────────────────────────────
+
+## must{} is Candor's explicit error propagation — you handle or forward,
+## but you cannot silently discard a result<T, E>.
+fn transfer(from: Account, to: Account, amount: i64) -> result<str, str> {
+    let from2 = withdraw(from, amount) must {
+        ok(v)  => v
+        err(e) => return err(str_concat("withdraw failed: ", e))
+    }
+    let to2 = deposit(to, amount) must {
+        ok(v)  => v
+        err(e) => return err(str_concat("deposit failed: ", e))
+    }
+    ok(str_concat(str_concat(from2.name, " -> "), to2.name))
+}
+
+## ── main ──────────────────────────────────────────────────────────────────────
+
+fn main() -> unit effects(io) {
+    let alice = Account { name: "Alice", balance: 1000 }
+    let bob   = Account { name: "Bob",   balance: 250 }
+
+    show_account(alice)
+    show_account(bob)
+
+    match transfer(alice, bob, 400) {
+        ok(msg) => print(str_concat("Transfer ok: ", msg))
+        err(e)  => print(str_concat("Transfer failed: ", e))
+    }
+
+    match transfer(alice, bob, 5000) {
+        ok(msg) => print(str_concat("Transfer ok: ", msg))
+        err(e)  => print(str_concat("Transfer failed: ", e))
+    }
+
+    return unit
+}

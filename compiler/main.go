@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	emit_c "github.com/candor-core/candor/compiler/emit_c"
+	"github.com/candor-core/candor/compiler/emit_go"
 	"github.com/candor-core/candor/compiler/cheader"
 	"github.com/candor-core/candor/compiler/diagnostics"
 	"github.com/candor-core/candor/compiler/doc"
@@ -85,6 +86,8 @@ func main() {
 		err = cmdFetch(os.Args[2:])
 	case "audit":
 		err = cmdAudit(os.Args[2:])
+	case "emit-go":
+		err = cmdEmitGo(os.Args[2:])
 	case "help", "--help", "-h":
 		fmt.Println(usage)
 	default:
@@ -585,6 +588,77 @@ func cmdAudit(args []string) error {
 
 	fmt.Printf("audit: %s → %s + %s (%d audit entries)\n",
 		sourceName, filepath.Base(cPath), filepath.Base(auditPath), len(log.Entries))
+	return nil
+}
+
+// ── candorc emit-go ───────────────────────────────────────────────────────────
+
+// cmdEmitGo translates a Candor source file to idiomatic Go, producing
+// file.go (compilable with `go build`) and file.audit.md (safety report).
+func cmdEmitGo(args []string) error {
+	targets, err := resolveTargets(filterFlags(args))
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return fmt.Errorf("emit-go: no .cnd files specified")
+	}
+
+	srcs := make(map[string]string)
+	var files []*parser.File
+	for _, srcPath := range targets {
+		raw, err := os.ReadFile(srcPath)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		srcs[srcPath] = src
+		tokens, err := lexer.Tokenize(srcPath, src)
+		if err != nil {
+			return renderLexParseError(err, srcPath, src)
+		}
+		file, err := parser.Parse(srcPath, tokens)
+		if err != nil {
+			return renderLexParseError(err, srcPath, src)
+		}
+		files = append(files, file)
+	}
+
+	files, err = injectCHeaders(files, srcs)
+	if err != nil {
+		return err
+	}
+
+	sm := diagnostics.NewSourceMap(srcs)
+	res, err := typeck.CheckProgram(files)
+	printWarnings(res, sm)
+	if err != nil {
+		return renderTypeckError(err, sm)
+	}
+
+	merged := mergeFiles(targets[0], files)
+	sourceName := filepath.Base(targets[0])
+
+	goSrc, auditLog, err := emit_go.Emit(merged, res, sourceName)
+	if err != nil {
+		return err
+	}
+
+	base := strings.TrimSuffix(targets[0], filepath.Ext(targets[0]))
+	goPath := base + ".go"
+	auditPath := base + ".audit.md"
+
+	if err := os.WriteFile(goPath, []byte(goSrc), 0o644); err != nil {
+		return err
+	}
+
+	report := auditLog.RenderMarkdown()
+	if err := os.WriteFile(auditPath, []byte(report), 0o644); err != nil {
+		return err
+	}
+
+	fmt.Printf("emit-go: %s → %s + %s (%d audit entries)\n",
+		sourceName, filepath.Base(goPath), filepath.Base(auditPath), len(auditLog.Entries))
 	return nil
 }
 
