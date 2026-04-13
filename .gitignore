@@ -48,3 +48,8 @@ docs/internal/
 
 # Test runner scratch output
 tmp/
+
+# Generated emit-go / emit-audit outputs in test and example directories
+tests/cases/*.go
+tests/cases/*.audit.md
+examples/*.audit.md

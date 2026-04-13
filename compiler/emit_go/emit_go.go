@@ -1419,9 +1419,18 @@ func (e *emitter) emitMatchPat(p parser.Expr) (string, error) {
 	case *parser.BoolLitExpr:
 		return v.Tok.Lexeme, nil
 	case *parser.PathExpr:
+		// Enum variant without payload: Module::Variant
 		return v.Head.Lexeme + "_" + v.Tail.Lexeme + "{}", nil
+	case *parser.CallExpr:
+		// Enum variant with payload: Variant(binding) — emit the variant name only;
+		// Go switch-case on structs requires a type assertion, which we can't do
+		// cleanly inline. Emit a comment so the file at least parses.
+		if id, ok := v.Fn.(*parser.IdentExpr); ok {
+			return fmt.Sprintf("_ /* %s(...) */", id.Tok.Lexeme), nil
+		}
+		return "_ /* unknown call pattern */", nil
 	default:
-		return fmt.Sprintf("/* pattern: %T */", p), nil
+		return fmt.Sprintf("_ /* unhandled pattern: %T */", p), nil
 	}
 }
 

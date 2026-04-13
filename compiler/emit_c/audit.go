@@ -2,7 +2,6 @@ package emit_c
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -89,32 +88,38 @@ func (l *AuditLog) RenderMarkdown() string {
 			}
 			sb.WriteString("\n")
 			fmt.Fprintf(&sb, "`%s`\n", e.Detail)
-			fmt.Fprintf(&sb, "C equivalent: %s\n", e.CEquiv)
+			fmt.Fprintf(&sb, "%s equivalent: %s\n", target, e.CEquiv)
 			fmt.Fprintf(&sb, "%s\n\n", e.Explanation)
 		}
 	}
 
 	// Summary table
 	sb.WriteString("---\n\n### Summary\n\n")
-	sb.WriteString("| Feature | Instances | C enforcement |\n")
-	sb.WriteString("|---------|-----------|---------------|\n")
+	fmt.Fprintf(&sb, "| Feature | Instances | %s enforcement |\n", target)
+	sb.WriteString("|---------|-----------|----------------|\n")
 
-	cEnforcementSummary := map[string]string{
-		"effects":  "None — dropped",
-		"pure":     "None — dropped",
-		"requires": "assert() in debug builds only",
-		"ensures":  "assert() in debug builds only",
-		"must":     "Not enforced — silent discard is valid C",
-		"secret":   "None — inner type emitted, wrapper dropped",
+	var enforcementSummary map[string]string
+	if target == "Go" {
+		enforcementSummary = map[string]string{
+			"effects":  "None — dropped",
+			"pure":     "None — dropped (no pure in Go)",
+			"requires": "panic() at runtime (not compile-time)",
+			"ensures":  "Not emitted (no postcondition support)",
+			"must":     "Not enforced — caller can use _ to discard",
+			"secret":   "None — inner type emitted, wrapper dropped",
+		}
+	} else {
+		enforcementSummary = map[string]string{
+			"effects":  "None — dropped",
+			"pure":     "None — dropped",
+			"requires": "assert() in debug builds only",
+			"ensures":  "assert() in debug builds only",
+			"must":     "Not enforced — silent discard is valid C",
+			"secret":   "None — inner type emitted, wrapper dropped",
+		}
 	}
+	cEnforcementSummary := enforcementSummary
 
-	// Sort for stable output, but use defined order where possible.
-	cats := make([]string, 0, len(byCategory))
-	for c := range byCategory {
-		cats = append(cats, c)
-	}
-	sort.Strings(cats)
-	_ = cats // use order slice instead for consistent display
 	for _, cat := range order {
 		entries := byCategory[cat]
 		if len(entries) == 0 {
