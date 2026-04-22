@@ -36,6 +36,9 @@ candorc
 **/*.c
 **/*.exe
 *.txt
+
+# Exception: hand-written C examples (not compiler output)
+!examples/c/*.c
 /tools/
 
 # Local working notes (not for the repo)
