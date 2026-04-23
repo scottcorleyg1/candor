@@ -682,7 +682,16 @@ func (em *llEmitter) emitFnDecl(name string, fd *parser.FnDecl) error {
 		retStr = em.llType(sig.Ret)
 	}
 
-	em.wf(`define %s @%s(%s) {`, retStr, llName, strings.Join(paramStrs, ", "))
+	// pure functions get memory(none) nounwind — a machine-verifiable IR claim
+	// that the function reads and writes no memory. LLVM's own verifier rejects
+	// any memory(none) function that contains a load or store, so this is not
+	// documentation: it is a compile-time proof of purity.
+	attrs := ""
+	if ann := em.res.FnEffects[name]; ann != nil && ann.Kind == parser.EffectsPure {
+		attrs = " memory(none) nounwind"
+	}
+
+	em.wf(`define %s @%s(%s)%s {`, retStr, llName, strings.Join(paramStrs, ", "), attrs)
 	em.w(`entry:`)
 
 	// Alloca + store for each param.

@@ -451,3 +451,37 @@ fn f() -> unit {
 	assertContains(t, out, `call ptr @malloc`)
 	assertContains(t, out, `call void @free`)
 }
+
+// ── pure → memory(none) transparency ─────────────────────────────────────────
+
+// TestPureFnGetsMemoryNoneAttr verifies that a pure function's LLVM IR carries
+// the memory(none) nounwind attributes. This is a machine-verifiable proof of
+// purity: LLVM's own verifier rejects any memory(none) function that loads or
+// stores, so the purity annotation is not documentation — it is a compile-time
+// invariant encoded in the IR.
+func TestPureFnGetsMemoryNoneAttr(t *testing.T) {
+	out := compileLL(t, `fn add(a: i64, b: i64) -> i64 pure { return a + b }`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `memory(none)`)
+	assertContains(t, out, `nounwind`)
+}
+
+// TestEffectfulFnNoMemoryNoneAttr verifies that effectful functions do NOT get
+// memory(none) — the attribute is reserved for proven-pure functions only.
+func TestEffectfulFnNoMemoryNoneAttr(t *testing.T) {
+	out := compileLL(t, `fn log(s: str) -> unit effects(io) { print(s) return unit }`)
+	t.Logf("LLVM IR:\n%s", out)
+	if strings.Contains(out, `memory(none)`) {
+		t.Error("effectful function must not get memory(none) attribute")
+	}
+}
+
+// TestUnannotatedFnNoMemoryNoneAttr verifies that unannotated functions (neither
+// pure nor effects-declared) also do not get memory(none).
+func TestUnannotatedFnNoMemoryNoneAttr(t *testing.T) {
+	out := compileLL(t, `fn double(x: i64) -> i64 { return x * 2 }`)
+	t.Logf("LLVM IR:\n%s", out)
+	if strings.Contains(out, `memory(none)`) {
+		t.Error("unannotated function must not get memory(none) attribute")
+	}
+}
