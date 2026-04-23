@@ -1,0 +1,733 @@
+{
+  "timestamp": "2026-04-23T05:39:20.316228+00:00",
+  "model": "claude-sonnet-4-6",
+  "baseline_overhead": 8,
+  "groups": {
+    "core_keywords": {
+      "description": "Every keyword must be 1 token. If any goes multi-token in a future model, it becomes a candidate for renaming or Agent Form aliasing.",
+      "results": {
+        "fn": {
+          "tokens": 1,
+          "alert": false
+        },
+        "let": {
+          "tokens": 1,
+          "alert": false
+        },
+        "if": {
+          "tokens": 1,
+          "alert": false
+        },
+        "else": {
+          "tokens": 1,
+          "alert": false
+        },
+        "return": {
+          "tokens": 1,
+          "alert": false
+        },
+        "pure": {
+          "tokens": 1,
+          "alert": false
+        },
+        "match": {
+          "tokens": 1,
+          "alert": false
+        },
+        "must": {
+          "tokens": 1,
+          "alert": false
+        },
+        "struct": {
+          "tokens": 1,
+          "alert": false
+        },
+        "enum": {
+          "tokens": 1,
+          "alert": false
+        },
+        "trait": {
+          "tokens": 1,
+          "alert": false
+        },
+        "impl": {
+          "tokens": 1,
+          "alert": false
+        },
+        "type": {
+          "tokens": 1,
+          "alert": false
+        },
+        "use": {
+          "tokens": 1,
+          "alert": false
+        },
+        "extern": {
+          "tokens": 1,
+          "alert": false
+        },
+        "effects": {
+          "tokens": 1,
+          "alert": false
+        },
+        "requires": {
+          "tokens": 1,
+          "alert": false
+        },
+        "ensures": {
+          "tokens": 1,
+          "alert": false
+        },
+        "loop": {
+          "tokens": 1,
+          "alert": false
+        },
+        "while": {
+          "tokens": 1,
+          "alert": false
+        },
+        "for": {
+          "tokens": 1,
+          "alert": false
+        },
+        "in": {
+          "tokens": 1,
+          "alert": false
+        },
+        "break": {
+          "tokens": 1,
+          "alert": false
+        },
+        "continue": {
+          "tokens": 1,
+          "alert": false
+        },
+        "true": {
+          "tokens": 1,
+          "alert": false
+        },
+        "false": {
+          "tokens": 1,
+          "alert": false
+        },
+        "ok": {
+          "tokens": 1,
+          "alert": false
+        },
+        "err": {
+          "tokens": 1,
+          "alert": false
+        },
+        "none": {
+          "tokens": 1,
+          "alert": false
+        },
+        "some": {
+          "tokens": 1,
+          "alert": false
+        },
+        "ref": {
+          "tokens": 1,
+          "alert": false
+        },
+        "refmut": {
+          "tokens": 3,
+          "alert": true
+        },
+        "box": {
+          "tokens": 1,
+          "alert": false
+        },
+        "arc": {
+          "tokens": 1,
+          "alert": false
+        },
+        "bool": {
+          "tokens": 1,
+          "alert": false
+        },
+        "str": {
+          "tokens": 1,
+          "alert": false
+        },
+        "unit": {
+          "tokens": 1,
+          "alert": false
+        }
+      }
+    },
+    "numeric_types": {
+      "description": "All integer/float types split as letter+number (2 tokens). This is fundamental BPE behavior \u2014 unlikely to change. Confirms that Agent Form type aliases (int, float, byte) save 1 token each.",
+      "results": {
+        "i8": {
+          "tokens": 2,
+          "alert": null
+        },
+        "i16": {
+          "tokens": 2,
+          "alert": null
+        },
+        "i32": {
+          "tokens": 2,
+          "alert": null
+        },
+        "i64": {
+          "tokens": 2,
+          "alert": null
+        },
+        "i128": {
+          "tokens": 2,
+          "alert": null
+        },
+        "u8": {
+          "tokens": 2,
+          "alert": null
+        },
+        "u16": {
+          "tokens": 2,
+          "alert": null
+        },
+        "u32": {
+          "tokens": 2,
+          "alert": null
+        },
+        "u64": {
+          "tokens": 2,
+          "alert": null
+        },
+        "u128": {
+          "tokens": 2,
+          "alert": null
+        },
+        "f16": {
+          "tokens": 2,
+          "alert": null
+        },
+        "f32": {
+          "tokens": 2,
+          "alert": null
+        },
+        "f64": {
+          "tokens": 2,
+          "alert": null
+        },
+        "bf16": {
+          "tokens": 2,
+          "alert": null
+        }
+      }
+    },
+    "agent_form_type_aliases": {
+      "description": "Agent Form candidates for single-token type aliases. These are 1-token words that could alias to their 2-token Candor equivalents in Agent Form only.",
+      "results": {
+        "int": {
+          "tokens": 1,
+          "alert": null
+        },
+        "uint": {
+          "tokens": 1,
+          "alert": null
+        },
+        "float": {
+          "tokens": 1,
+          "alert": null
+        },
+        "byte": {
+          "tokens": 1,
+          "alert": null
+        },
+        "char": {
+          "tokens": 1,
+          "alert": null
+        }
+      }
+    },
+    "operators": {
+      "description": "Operators used in Candor syntax. 1-token operators are ideal. |> is 2 tokens \u2014 expected but still cheaper than nested calls. ?| is 2 tokens (error-transform variant of ?).",
+      "results": {
+        "->": {
+          "tokens": 1,
+          "alert": null
+        },
+        "=>": {
+          "tokens": 1,
+          "alert": null
+        },
+        "::": {
+          "tokens": 1,
+          "alert": null
+        },
+        "?": {
+          "tokens": 1,
+          "alert": null
+        },
+        "?|": {
+          "tokens": 2,
+          "alert": null
+        },
+        "|>": {
+          "tokens": 2,
+          "alert": null
+        },
+        "{": {
+          "tokens": 1,
+          "alert": null
+        },
+        "}": {
+          "tokens": 1,
+          "alert": null
+        },
+        "(": {
+          "tokens": 1,
+          "alert": null
+        },
+        ")": {
+          "tokens": 1,
+          "alert": null
+        },
+        "<": {
+          "tokens": 1,
+          "alert": null
+        },
+        ">": {
+          "tokens": 1,
+          "alert": null
+        },
+        ",": {
+          "tokens": 1,
+          "alert": null
+        },
+        ":": {
+          "tokens": 1,
+          "alert": null
+        },
+        ";": {
+          "tokens": 1,
+          "alert": null
+        }
+      }
+    },
+    "effect_annotations": {
+      "description": "Current Verification Form effect syntax vs proposed Agent Form shorthands. The savings are large: 4 tokens vs 1 token per effect declaration.",
+      "results": {
+        "single io effect": {
+          "verification": "effects(io)",
+          "verification_tokens": 4,
+          "agent_form": "io",
+          "agent_form_tokens": 1,
+          "tokens_saved": 3,
+          "savings_pct": 75.0
+        },
+        "single gpu effect": {
+          "verification": "effects(gpu)",
+          "verification_tokens": 4,
+          "agent_form": "gpu",
+          "agent_form_tokens": 1,
+          "tokens_saved": 3,
+          "savings_pct": 75.0
+        },
+        "single net effect": {
+          "verification": "effects(net)",
+          "verification_tokens": 4,
+          "agent_form": "net",
+          "agent_form_tokens": 1,
+          "tokens_saved": 3,
+          "savings_pct": 75.0
+        },
+        "single sys effect": {
+          "verification": "effects(sys)",
+          "verification_tokens": 4,
+          "agent_form": "sys",
+          "agent_form_tokens": 1,
+          "tokens_saved": 3,
+          "savings_pct": 75.0
+        },
+        "io + gpu combined": {
+          "verification": "effects(io, gpu)",
+          "verification_tokens": 6,
+          "agent_form": "io gpu",
+          "agent_form_tokens": 2,
+          "tokens_saved": 4,
+          "savings_pct": 66.7
+        },
+        "pure (already optimal \u2014 no Agent Form alias needed)": {
+          "verification": "pure",
+          "verification_tokens": 1,
+          "agent_form": "pure",
+          "agent_form_tokens": 1,
+          "tokens_saved": 0,
+          "savings_pct": 0.0
+        }
+      }
+    },
+    "result_type_expressions": {
+      "description": "Verification Form result<T,str> vs Agent Form ?T shorthand. The savings are 50-64% per return type annotation.",
+      "results": {
+        "result<Row, str>": {
+          "verification": "result<Row, str>",
+          "verification_tokens": 6,
+          "agent_form": "?Row",
+          "agent_form_tokens": 2,
+          "tokens_saved": 4,
+          "savings_pct": 66.7
+        },
+        "result<str, str>": {
+          "verification": "result<str, str>",
+          "verification_tokens": 6,
+          "agent_form": "?str",
+          "agent_form_tokens": 2,
+          "tokens_saved": 4,
+          "savings_pct": 66.7
+        },
+        "result<i64, str>": {
+          "verification": "result<i64, str>",
+          "verification_tokens": 7,
+          "agent_form": "?i64",
+          "agent_form_tokens": 3,
+          "tokens_saved": 4,
+          "savings_pct": 57.1
+        },
+        "result<Summary, str>": {
+          "verification": "result<Summary, str>",
+          "verification_tokens": 6,
+          "agent_form": "?Summary",
+          "agent_form_tokens": 2,
+          "tokens_saved": 4,
+          "savings_pct": 66.7
+        },
+        "result<Config, str>": {
+          "verification": "result<Config, str>",
+          "verification_tokens": 6,
+          "agent_form": "?Config",
+          "agent_form_tokens": 2,
+          "tokens_saved": 4,
+          "savings_pct": 66.7
+        }
+      }
+    },
+    "full_return_signatures": {
+      "description": "Complete return type + annotation fragments \u2014 the most common signature suffix patterns. Combines result type + effect savings.",
+      "results": {
+        "pure result fn (common: parse, validate)": {
+          "verification": "-> result<Row, str> pure",
+          "verification_tokens": 8,
+          "agent_form": "-> ?Row pure",
+          "agent_form_tokens": 4,
+          "tokens_saved": 4,
+          "savings_pct": 50.0
+        },
+        "effectful result fn (common: load, run, write)": {
+          "verification": "-> result<str, str> effects(io)",
+          "verification_tokens": 11,
+          "agent_form": "-> ?str io",
+          "agent_form_tokens": 4,
+          "tokens_saved": 7,
+          "savings_pct": 63.6
+        },
+        "effectful with named return type": {
+          "verification": "-> result<Summary, str> effects(io)",
+          "verification_tokens": 11,
+          "agent_form": "-> ?Summary io",
+          "agent_form_tokens": 4,
+          "tokens_saved": 7,
+          "savings_pct": 63.6
+        },
+        "pure non-failing fn": {
+          "verification": "-> i64 pure",
+          "verification_tokens": 5,
+          "agent_form": "-> int pure",
+          "agent_form_tokens": 3,
+          "tokens_saved": 2,
+          "savings_pct": 40.0
+        },
+        "unit effectful fn": {
+          "verification": "-> unit effects(io)",
+          "verification_tokens": 6,
+          "agent_form": "-> unit io",
+          "agent_form_tokens": 3,
+          "tokens_saved": 3,
+          "savings_pct": 50.0
+        }
+      }
+    },
+    "identifier_splitting": {
+      "description": "How snake_case function names split. Always: word + underscore + word = 3 tokens minimum. CamelCase struct names vary: short names (Row, Config) are 1 token; compound names (LogEntry) are 2. This is intrinsic to BPE and unlikely to improve.",
+      "results": {
+        "parse_row": {
+          "tokens": 3,
+          "alert": null
+        },
+        "parse_line": {
+          "tokens": 3,
+          "alert": null
+        },
+        "run_pipeline": {
+          "tokens": 3,
+          "alert": null
+        },
+        "count_lines": {
+          "tokens": 3,
+          "alert": null
+        },
+        "load_config": {
+          "tokens": 3,
+          "alert": null
+        },
+        "filter_lines": {
+          "tokens": 3,
+          "alert": null
+        },
+        "validate_row": {
+          "tokens": 3,
+          "alert": null
+        },
+        "compute_stats": {
+          "tokens": 3,
+          "alert": null
+        },
+        "Row": {
+          "tokens": 1,
+          "alert": null
+        },
+        "Summary": {
+          "tokens": 1,
+          "alert": null
+        },
+        "Config": {
+          "tokens": 1,
+          "alert": null
+        },
+        "LogEntry": {
+          "tokens": 2,
+          "alert": null
+        },
+        "ParseResult": {
+          "tokens": 2,
+          "alert": null
+        },
+        "LogLevel": {
+          "tokens": 2,
+          "alert": null
+        }
+      }
+    },
+    "collection_types": {
+      "description": "Container types with type parameters. Each angle bracket and comma is 1 token. The type parameter itself adds its token count.",
+      "results": {
+        "vec<i64>": {
+          "tokens": 5,
+          "alert": null
+        },
+        "vec<str>": {
+          "tokens": 4,
+          "alert": null
+        },
+        "vec<Row>": {
+          "tokens": 4,
+          "alert": null
+        },
+        "option<str>": {
+          "tokens": 4,
+          "alert": null
+        },
+        "option<Row>": {
+          "tokens": 4,
+          "alert": null
+        },
+        "map<str, i64>": {
+          "tokens": 7,
+          "alert": null
+        },
+        "ref<T>": {
+          "tokens": 4,
+          "alert": null
+        },
+        "refmut<T>": {
+          "tokens": 6,
+          "alert": null
+        },
+        "box<T>": {
+          "tokens": 4,
+          "alert": null
+        },
+        "arc<T>": {
+          "tokens": 4,
+          "alert": null
+        }
+      }
+    },
+    "refmut_agent_form": {
+      "description": "refmut is 3 tokens \u2014 the only core keyword that fails the 1-token test. Agent Form alias: mut<T> = 4 tokens vs refmut<T> = 6 tokens (33% savings). Re-check on each new model to see if this changes.",
+      "results": {
+        "mutable reference type": {
+          "verification": "refmut<T>",
+          "verification_tokens": 6,
+          "agent_form": "mut<T>",
+          "agent_form_tokens": 4,
+          "tokens_saved": 2,
+          "savings_pct": 33.3
+        },
+        "mutable reference in parameter (with name)": {
+          "verification": "data: refmut<Row>",
+          "verification_tokens": 8,
+          "agent_form": "data: mut<Row>",
+          "agent_form_tokens": 6,
+          "tokens_saved": 2,
+          "savings_pct": 25.0
+        }
+      }
+    },
+    "future_keywords": {
+      "description": "Keywords being considered for M14 and beyond. All should be 1 token before committing to them as language keywords.",
+      "results": {
+        "yield": {
+          "tokens": 1,
+          "alert": false
+        },
+        "await": {
+          "tokens": 1,
+          "alert": false
+        },
+        "async": {
+          "tokens": 1,
+          "alert": false
+        },
+        "where": {
+          "tokens": 1,
+          "alert": false
+        },
+        "with": {
+          "tokens": 1,
+          "alert": false
+        },
+        "move": {
+          "tokens": 1,
+          "alert": false
+        },
+        "copy": {
+          "tokens": 1,
+          "alert": false
+        },
+        "pin": {
+          "tokens": 1,
+          "alert": false
+        },
+        "weak": {
+          "tokens": 1,
+          "alert": false
+        },
+        "task": {
+          "tokens": 1,
+          "alert": false
+        },
+        "spawn": {
+          "tokens": 1,
+          "alert": false
+        }
+      }
+    },
+    "question_mark_propagation": {
+      "description": "? operator vs full match error-propagation boilerplate. The highest token-density operator in the language: 1 token replaces 15-25 tokens of routing noise with zero semantic loss.",
+      "results": {
+        "single propagation site": {
+          "verification": "match parse(s) { ok(v) => v   err(e) => return err(e) }",
+          "verification_tokens": 24,
+          "agent_form": "parse(s)?",
+          "agent_form_tokens": 4,
+          "tokens_saved": 20,
+          "savings_pct": 83.3
+        },
+        "propagation with named-type result": {
+          "verification": "match load_config(path) { ok(v) => v   err(e) => return err(e) }",
+          "verification_tokens": 26,
+          "agent_form": "load_config(path)?",
+          "agent_form_tokens": 6,
+          "tokens_saved": 20,
+          "savings_pct": 76.9
+        },
+        "3 propagation sites in one function (realistic IO fn body)": {
+          "verification": "match open(path) { ok(v) => v   err(e) => return err(e) } match read(f) { ok(v) => v   err(e) => return err(e) } match parse(s) { ok(v) => v   err(e) => return err(e) }",
+          "verification_tokens": 72,
+          "agent_form": "open(path)? read(f)? parse(s)?",
+          "agent_form_tokens": 14,
+          "tokens_saved": 58,
+          "savings_pct": 80.6
+        },
+        "5 propagation sites (complex pipeline fn)": {
+          "verification": "match open(path) { ok(v) => v   err(e) => return err(e) } match read(f) { ok(v) => v   err(e) => return err(e) } match parse(s) { ok(v) => v   err(e) => return err(e) } match validate(row) { ok(v) => v   err(e) => return err(e) } match compute(row) { ok(v) => v   err(e) => return err(e) }",
+          "verification_tokens": 120,
+          "agent_form": "open(path)? read(f)? parse(s)? validate(row)? compute(row)?",
+          "agent_form_tokens": 24,
+          "tokens_saved": 96,
+          "savings_pct": 80.0
+        }
+      }
+    },
+    "pipe_operator": {
+      "description": "|> pipeline vs nested function calls. Token-neutral for 1-token fn names; saves tokens when names are snake_case (3 tokens each). Primary AI value: linear left-to-right reasoning vs depth-tracking for nested parens.",
+      "results": {
+        "2-step pipeline, short names": {
+          "verification": "double(inc(x))",
+          "verification_tokens": 6,
+          "agent_form": "x |> inc |> double",
+          "agent_form_tokens": 7,
+          "tokens_saved": -1,
+          "savings_pct": -16.7
+        },
+        "3-step pipeline, short names": {
+          "verification": "render(format(parse(s)))",
+          "verification_tokens": 8,
+          "agent_form": "s |> parse |> format |> render",
+          "agent_form_tokens": 10,
+          "tokens_saved": -2,
+          "savings_pct": -25.0
+        },
+        "3-step pipeline, snake_case names": {
+          "verification": "compute_stats(filter_lines(parse_row(line)))",
+          "verification_tokens": 14,
+          "agent_form": "line |> parse_row |> filter_lines |> compute_stats",
+          "agent_form_tokens": 16,
+          "tokens_saved": -2,
+          "savings_pct": -14.3
+        },
+        "5-step pipeline, snake_case names": {
+          "verification": "write_output(format_report(compute_stats(filter_lines(parse_row(line)))))",
+          "verification_tokens": 23,
+          "agent_form": "line |> parse_row |> filter_lines |> compute_stats |> format_report |> write_output",
+          "agent_form_tokens": 26,
+          "tokens_saved": -3,
+          "savings_pct": -13.0
+        }
+      }
+    },
+    "compound_savings": {
+      "description": "Full function signatures combining multiple M14 features: result type shorthand + ? propagation + |> pipeline. Shows compounding effect on a realistic fn declaration + body fragment.",
+      "results": {
+        "fn signature: effectful result fn": {
+          "verification": "fn run(path: str) -> result<str, str> effects(io)",
+          "verification_tokens": 18,
+          "agent_form": "fn run(path: str) -> ?str io",
+          "agent_form_tokens": 11,
+          "tokens_saved": 7,
+          "savings_pct": 38.9
+        },
+        "fn body: 2 propagations + 1 pipeline": {
+          "verification": "let f = match open(path) { ok(v) => v   err(e) => return err(e) } let s = match read(f) { ok(v) => v   err(e) => return err(e) } let r = filter_lines(parse_row(s))",
+          "verification_tokens": 67,
+          "agent_form": "let f = open(path)? let s = read(f)? let r = s |> parse_row |> filter_lines",
+          "agent_form_tokens": 30,
+          "tokens_saved": 37,
+          "savings_pct": 55.2
+        },
+        "complete short fn (signature + 3-propagation body)": {
+          "verification": "fn process(path: str) -> result<str, str> effects(io) { let f = match open(path) { ok(v) => v   err(e) => return err(e) } let s = match read(f) { ok(v) => v   err(e) => return err(e) } let r = match parse(s) { ok(v) => v   err(e) => return err(e) } return ok(r) }",
+          "verification_tokens": 106,
+          "agent_form": "fn process(path: str) -> ?str io { let f = open(path)? let s = read(f)? let r = parse(s)? return ok(r) }",
+          "agent_form_tokens": 42,
+          "tokens_saved": 64,
+          "savings_pct": 60.4
+        }
+      }
+    }
+  }
+}

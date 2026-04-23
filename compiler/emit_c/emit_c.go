@@ -2925,6 +2925,74 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 	case *parser.MatchExpr:
 		return e.emitMustOrMatch(ex.X, ex.Arms, e.res.ExprTypes[ex], sb)
 
+	case *parser.PropagateExpr:
+		return e.emitPropagateExpr(ex, sb)
+
+	case *parser.PipeExpr:
+		// |> desugars to fn(lhs). Apply the same direct-call vs fat-pointer
+		// logic used by CallExpr so named functions emit without a trampoline.
+		if inst, ok := e.res.CallSiteGeneric[ex.Fn]; ok {
+			sb.WriteString(inst.MangledName)
+			sb.WriteByte('(')
+			if err := e.emitExpr(ex.X, sb); err != nil {
+				return err
+			}
+			sb.WriteByte(')')
+			break
+		}
+		isFatPtrPipe := false
+		if ident, ok := ex.Fn.(*parser.IdentExpr); ok {
+			name := ident.Tok.Lexeme
+			if _, isNamed := e.res.FnSigs[name]; !isNamed {
+				if _, isExtern := e.res.ExternFns[name]; !isExtern {
+					if _, isFnType := e.res.ExprTypes[ex.Fn].(*typeck.FnType); isFnType {
+						isFatPtrPipe = true
+					}
+				}
+			}
+		} else if _, isFnType := e.res.ExprTypes[ex.Fn].(*typeck.FnType); isFnType {
+			isFatPtrPipe = true
+		}
+		if isFatPtrPipe {
+			if ident, ok := ex.Fn.(*parser.IdentExpr); ok {
+				name := ident.Tok.Lexeme
+				sb.WriteString(name)
+				sb.WriteString("._fn(")
+				if err := e.emitExpr(ex.X, sb); err != nil {
+					return err
+				}
+				sb.WriteString(", ")
+				sb.WriteString(name)
+				sb.WriteString("._env)")
+			} else {
+				fnTypN, _ := e.fnTypeName(e.res.ExprTypes[ex.Fn].(*typeck.FnType))
+				sb.WriteString("(__extension__ ({ ")
+				sb.WriteString(fnTypN)
+				sb.WriteString(" _pf = ")
+				if err := e.emitExpr(ex.Fn, sb); err != nil {
+					return err
+				}
+				sb.WriteString("; _pf._fn(")
+				if err := e.emitExpr(ex.X, sb); err != nil {
+					return err
+				}
+				sb.WriteString(", _pf._env); }))")
+			}
+		} else {
+			if ident, ok := ex.Fn.(*parser.IdentExpr); ok {
+				sb.WriteString(ident.Tok.Lexeme)
+			} else {
+				if err := e.emitExpr(ex.Fn, sb); err != nil {
+					return err
+				}
+			}
+			sb.WriteByte('(')
+			if err := e.emitExpr(ex.X, sb); err != nil {
+				return err
+			}
+			sb.WriteByte(')')
+		}
+
 	case *parser.ReturnExpr:
 		sb.WriteString("return ")
 		if err := e.emitExpr(ex.Value, sb); err != nil {
@@ -5705,6 +5773,43 @@ func (e *emitter) emitMustOrMatch(x parser.Expr, arms []parser.MustArm, bodyType
 
 	if bodyC != "" {
 		fmt.Fprintf(sb, "    %s;\n", res)
+	} else {
+		fmt.Fprintf(sb, "    (void)0;\n")
+	}
+	fmt.Fprintf(sb, "}))")
+	return nil
+}
+
+// emitPropagateExpr emits the GCC statement expression for `expr?`.
+// It evaluates the operand (a result<T,E>), early-returns an error result if
+// !_ok, and otherwise yields the _ok_val to the enclosing expression.
+func (e *emitter) emitPropagateExpr(ex *parser.PropagateExpr, sb *strings.Builder) error {
+	operandType := e.res.ExprTypes[ex.X]
+	gen := operandType.(*typeck.GenType) // typeck guarantees result<T,E>
+
+	operandC, err := e.cType(operandType)
+	if err != nil {
+		return err
+	}
+	retC, err := e.cType(e.retType)
+	if err != nil {
+		return err
+	}
+
+	var xb strings.Builder
+	if err := e.emitExpr(ex.X, &xb); err != nil {
+		return err
+	}
+
+	tmp := e.freshTmp()
+	okIsUnit := gen.Params[0].Equals(typeck.TUnit)
+
+	fmt.Fprintf(sb, "(__extension__ ({\n")
+	fmt.Fprintf(sb, "    %s %s = %s;\n", operandC, tmp, xb.String())
+	fmt.Fprintf(sb, "    if (!%s._ok) { %s _cnd_early = {0}; _cnd_early._err_val = %s._err_val; return _cnd_early; }\n",
+		tmp, retC, tmp)
+	if !okIsUnit {
+		fmt.Fprintf(sb, "    %s._ok_val;\n", tmp)
 	} else {
 		fmt.Fprintf(sb, "    (void)0;\n")
 	}

@@ -107,9 +107,11 @@ const (
 	TokBang    // !
 	TokUScore  // _
 
-	// Arrows
-	TokArrow    // ->
-	TokFatArrow // =>
+	// Arrows and pipeline
+	TokArrow     // ->
+	TokFatArrow  // =>
+	TokPipeArrow // |>
+	TokQuestion  // ?
 
 	// --- Directives (#word) ---
 	TokDirective // the word after #: "use", "intent", "import_c_header", etc.
@@ -268,6 +270,8 @@ var tokenNames = map[TokenType]string{
 	TokUScore:    "_",
 	TokArrow:     "->",
 	TokFatArrow:  "=>",
+	TokPipeArrow: "|>",
+	TokQuestion:  "?",
 	TokDirective: "Directive",
 	TokEOF:       "EOF",
 }

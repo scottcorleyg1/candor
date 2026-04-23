@@ -191,6 +191,82 @@
         "yield", "await", "async", "where", "with",
         "move", "copy", "pin", "weak", "task", "spawn"
       ]
+    },
+
+    {
+      "name": "question_mark_propagation",
+      "description": "? operator vs full match error-propagation boilerplate. The highest token-density operator in the language: 1 token replaces 15-25 tokens of routing noise with zero semantic loss.",
+      "comparisons": [
+        {
+          "label": "single propagation site",
+          "verification": "match parse(s) { ok(v) => v   err(e) => return err(e) }",
+          "agent_form": "parse(s)?"
+        },
+        {
+          "label": "propagation with named-type result",
+          "verification": "match load_config(path) { ok(v) => v   err(e) => return err(e) }",
+          "agent_form": "load_config(path)?"
+        },
+        {
+          "label": "3 propagation sites in one function (realistic IO fn body)",
+          "verification": "match open(path) { ok(v) => v   err(e) => return err(e) } match read(f) { ok(v) => v   err(e) => return err(e) } match parse(s) { ok(v) => v   err(e) => return err(e) }",
+          "agent_form": "open(path)? read(f)? parse(s)?"
+        },
+        {
+          "label": "5 propagation sites (complex pipeline fn)",
+          "verification": "match open(path) { ok(v) => v   err(e) => return err(e) } match read(f) { ok(v) => v   err(e) => return err(e) } match parse(s) { ok(v) => v   err(e) => return err(e) } match validate(row) { ok(v) => v   err(e) => return err(e) } match compute(row) { ok(v) => v   err(e) => return err(e) }",
+          "agent_form": "open(path)? read(f)? parse(s)? validate(row)? compute(row)?"
+        }
+      ]
+    },
+
+    {
+      "name": "pipe_operator",
+      "description": "|> pipeline vs nested function calls. Token-neutral for 1-token fn names; saves tokens when names are snake_case (3 tokens each). Primary AI value: linear left-to-right reasoning vs depth-tracking for nested parens.",
+      "comparisons": [
+        {
+          "label": "2-step pipeline, short names",
+          "verification": "double(inc(x))",
+          "agent_form": "x |> inc |> double"
+        },
+        {
+          "label": "3-step pipeline, short names",
+          "verification": "render(format(parse(s)))",
+          "agent_form": "s |> parse |> format |> render"
+        },
+        {
+          "label": "3-step pipeline, snake_case names",
+          "verification": "compute_stats(filter_lines(parse_row(line)))",
+          "agent_form": "line |> parse_row |> filter_lines |> compute_stats"
+        },
+        {
+          "label": "5-step pipeline, snake_case names",
+          "verification": "write_output(format_report(compute_stats(filter_lines(parse_row(line)))))",
+          "agent_form": "line |> parse_row |> filter_lines |> compute_stats |> format_report |> write_output"
+        }
+      ]
+    },
+
+    {
+      "name": "compound_savings",
+      "description": "Full function signatures combining multiple M14 features: result type shorthand + ? propagation + |> pipeline. Shows compounding effect on a realistic fn declaration + body fragment.",
+      "comparisons": [
+        {
+          "label": "fn signature: effectful result fn",
+          "verification": "fn run(path: str) -> result<str, str> effects(io)",
+          "agent_form": "fn run(path: str) -> ?str io"
+        },
+        {
+          "label": "fn body: 2 propagations + 1 pipeline",
+          "verification": "let f = match open(path) { ok(v) => v   err(e) => return err(e) } let s = match read(f) { ok(v) => v   err(e) => return err(e) } let r = filter_lines(parse_row(s))",
+          "agent_form": "let f = open(path)? let s = read(f)? let r = s |> parse_row |> filter_lines"
+        },
+        {
+          "label": "complete short fn (signature + 3-propagation body)",
+          "verification": "fn process(path: str) -> result<str, str> effects(io) { let f = match open(path) { ok(v) => v   err(e) => return err(e) } let s = match read(f) { ok(v) => v   err(e) => return err(e) } let r = match parse(s) { ok(v) => v   err(e) => return err(e) } return ok(r) }",
+          "agent_form": "fn process(path: str) -> ?str io { let f = open(path)? let s = read(f)? let r = parse(s)? return ok(r) }"
+        }
+      ]
     }
   ]
 }

@@ -538,6 +538,27 @@ type SpawnExpr struct {
 func (e *SpawnExpr) Pos() lexer.Token { return e.SpawnTok }
 func (e *SpawnExpr) exprNode()        {}
 
+// PropagateExpr: expr? — extract ok(T) or early-return err(E) from enclosing fn.
+// The enclosing function must return result<T2, E>.
+type PropagateExpr struct {
+	X           Expr
+	QuestionTok lexer.Token
+}
+
+func (e *PropagateExpr) Pos() lexer.Token { return e.QuestionTok }
+func (e *PropagateExpr) exprNode()        {}
+
+// PipeExpr: expr |> fn — left-to-right function application.
+// Desugars to fn(expr). Left-associative: a |> f |> g == g(f(a)).
+type PipeExpr struct {
+	X       Expr
+	PipeTok lexer.Token
+	Fn      Expr
+}
+
+func (e *PipeExpr) Pos() lexer.Token { return e.PipeTok }
+func (e *PipeExpr) exprNode()        {}
+
 // CastExpr: expr as Type — explicit numeric cast.
 type CastExpr struct {
 	X      Expr

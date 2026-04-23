@@ -1477,3 +1477,101 @@ fn f() -> unit {
 	c := pipeline(t, src)
 	assertContains(t, c, "sys/mman.h")
 }
+
+// ── ? propagation operator ────────────────────────────────────────────────────
+
+func TestPropagateExprEmitsExtension(t *testing.T) {
+	src := `
+fn parse(s: str) -> result<u32, str> pure { return ok(0) }
+fn run(s: str) -> result<u32, str> pure {
+    let v: u32 = parse(s)?
+    return ok(v)
+}
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "__extension__")
+	assertContains(t, out, "_ok_val")
+	assertContains(t, out, "_err_val")
+}
+
+func TestPropagateExprEarlyReturn(t *testing.T) {
+	src := `
+fn parse(s: str) -> result<u32, str> pure { return ok(0) }
+fn run(s: str) -> result<u32, str> pure {
+    let v: u32 = parse(s)?
+    return ok(v)
+}
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "if (!")
+	assertContains(t, out, "_cnd_early")
+	assertContains(t, out, "return _cnd_early")
+}
+
+func TestPropagateExprTypeckRejectsWrongReturnType(t *testing.T) {
+	src := `
+fn parse(s: str) -> result<u32, str> pure { return ok(0) }
+fn bad(s: str) -> u32 pure {
+    let v: u32 = parse(s)?
+    return v
+}
+`
+	tokens, err := lexer.Tokenize("<test>", src)
+	if err != nil {
+		t.Fatalf("lex: %v", err)
+	}
+	file, err := parser.Parse("<test>", tokens)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	_, err = typeck.Check(file)
+	if err == nil {
+		t.Fatal("expected typeck error for ? in non-result function, got nil")
+	}
+	if !strings.Contains(err.Error(), "?") {
+		t.Errorf("expected error mentioning '?', got: %v", err)
+	}
+}
+
+// ── |> pipeline operator ──────────────────────────────────────────────────────
+
+func TestPipeExprDesugar(t *testing.T) {
+	src := `
+fn double(x: u32) -> u32 pure { return x * 2 }
+fn quad(x: u32) -> u32 pure { return x |> double |> double }
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "double(")
+}
+
+func TestPipeExprChained(t *testing.T) {
+	src := `
+fn inc(x: u32) -> u32 pure { return x + 1 }
+fn triple_inc(x: u32) -> u32 pure { return x |> inc |> inc |> inc }
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "inc(inc(inc(")
+}
+
+func TestPipeExprTypeckRejectsBadArg(t *testing.T) {
+	src := `
+fn takes_str(s: str) -> str pure { return s }
+fn bad(x: u32) -> str pure { return x |> takes_str }
+`
+	tokens, err := lexer.Tokenize("<test>", src)
+	if err != nil {
+		t.Fatalf("lex: %v", err)
+	}
+	file, err := parser.Parse("<test>", tokens)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	_, err = typeck.Check(file)
+	if err == nil {
+		t.Fatal("expected typeck error for |> with wrong argument type, got nil")
+	}
+}

@@ -1688,6 +1688,12 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 	case *parser.MustExpr:
 		return c.inferMustExpr(e, sc, hint)
 
+	case *parser.PropagateExpr:
+		return c.inferPropagateExpr(e, sc)
+
+	case *parser.PipeExpr:
+		return c.inferPipeExpr(e, sc, hint)
+
 	case *parser.ReturnExpr:
 		// return inside a must{} arm — type is never (exits the function)
 		if _, err := c.checkExpr(e.Value, sc, nil); err != nil {
@@ -2351,6 +2357,49 @@ func (c *checker) inferMustExpr(e *parser.MustExpr, sc *scope, hint Type) (Type,
 		bodyType = TUnit
 	}
 	return bodyType, nil
+}
+
+// inferPropagateExpr handles expr? — early-return propagation.
+// The operand must be result<T, E>. The enclosing function must return result<T2, E>.
+// The expression itself evaluates to T (the ok value).
+func (c *checker) inferPropagateExpr(e *parser.PropagateExpr, sc *scope) (Type, error) {
+	operandType, err := c.checkExpr(e.X, sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := operandType.(*GenType)
+	if !ok || gen.Con != "result" || len(gen.Params) != 2 {
+		return nil, c.errorf(e.QuestionTok,
+			"? requires result<T, E>, got %s", operandType)
+	}
+	// Verify the enclosing function's return type is also result<_, E>.
+	retGen, retOk := c.curRetType.(*GenType)
+	if !retOk || retGen.Con != "result" || len(retGen.Params) != 2 {
+		return nil, c.errorf(e.QuestionTok,
+			"? can only be used in a function returning result<T, E>, enclosing return type is %s",
+			c.curRetType)
+	}
+	// Error types must be compatible.
+	if _, ok := Coerce(gen.Params[1], retGen.Params[1]); !ok {
+		if !gen.Params[1].Equals(retGen.Params[1]) {
+			return nil, c.errorf(e.QuestionTok,
+				"? error type %s is not compatible with enclosing return error type %s",
+				gen.Params[1], retGen.Params[1])
+		}
+	}
+	return gen.Params[0], nil // yields T
+}
+
+// inferPipeExpr handles expr |> fn — left-to-right function application.
+// Desugars to fn(expr) at the type level.
+func (c *checker) inferPipeExpr(e *parser.PipeExpr, sc *scope, hint Type) (Type, error) {
+	// Synthesize a CallExpr and reuse inferCallExpr.
+	synth := &parser.CallExpr{
+		Fn:     e.Fn,
+		LParen: e.PipeTok,
+		Args:   []parser.Expr{e.X},
+	}
+	return c.inferCallExpr(synth, sc)
 }
 
 func (c *checker) inferMatchExpr(e *parser.MatchExpr, sc *scope, hint Type) (Type, error) {
