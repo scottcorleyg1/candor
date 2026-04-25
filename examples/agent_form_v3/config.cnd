@@ -1,0 +1,66 @@
+## config.cnd — Agent Form v3 (?|f with stdlib error helpers)
+## The parse_line wrapping must{} stays — it adds line number context (multi-arg).
+
+fn err_read(path: str) -> str pure { return str_concat("file not found: ", path) }
+fn err_line(n: i64, e: str) -> str pure {
+    return str_concat("line ", str_concat(int_to_str(n), str_concat(": ", e)))
+}
+
+struct Config { host: str  port: str  debug: str }
+
+fn parse_line(line: str) -> ?str pure {
+    if str_len(line) == 0 { return err("empty line") }
+    let sep = str_find(line, "=", 0) must {
+        some(i) => i
+        none    => return err(str_concat("missing '=' in: ", line))
+    }
+    if sep == 0 { return err(str_concat("empty key in: ", line)) }
+    ok(line)
+}
+
+fn get_key(line: str) -> str pure {
+    let sep = str_find(line, "=", 0) must { some(i) => i  none => return "" }
+    str_substr(line, 0, sep)
+}
+
+fn get_val(line: str) -> str pure {
+    let n = str_len(line)
+    let sep = str_find(line, "=", 0) must { some(i) => i  none => return "" }
+    str_substr(line, sep + 1, n - sep - 1)
+}
+
+fn load_config(path: str) -> ?Config io {
+    let raw = read_file(path)?|_=>err_read(path)
+    let lines = str_split(raw, "\n")
+    let mut host: str = ""
+    let mut port: str = ""
+    let mut dbg:  str = ""
+    let n = vec_len(lines) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let line = str_trim(lines[i as u64])
+        if str_len(line) > 0 {
+            let _v = parse_line(line)?|e=>err_line(i + 1, e)
+            let k = get_key(line)
+            let v = get_val(line)
+            if str_eq(k, "host")  { host = v }
+            if str_eq(k, "port")  { port = v }
+            if str_eq(k, "debug") { dbg  = v }
+        }
+        i = i + 1
+    }
+    ok(Config{ host: host, port: port, debug: dbg })
+}
+
+fn main() -> unit io {
+    match load_config("examples/config_test.txt") {
+        ok(cfg) => {
+            print(str_concat("host=",  cfg.host))
+            print(str_concat("port=",  cfg.port))
+            print(str_concat("debug=", cfg.debug))
+        }
+        err(e) => print(str_concat("error: ", e))
+    }
+    return unit
+}
