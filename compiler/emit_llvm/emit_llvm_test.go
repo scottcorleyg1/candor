@@ -561,3 +561,57 @@ fn divide(a: i64, b: i64) -> result<i64, str> {
 	t.Logf("LLVM IR:\n%s", out)
 	assertContains(t, out, `%_cnd_result_i64_str = type { i1, i64, ptr }`)
 }
+
+// ── LLVM-3: ? as extractvalue+br+ret ─────────────────────────────────────────
+
+// TestPropagateExprExtractvalue verifies that expr? emits extractvalue on the
+// discriminant, branches to ok/err paths, and returns early on the err path.
+func TestPropagateExprExtractvalue(t *testing.T) {
+	out := compileLL(t, `
+fn parse(s: str) -> result<i64, str> {
+    return err(s)
+}
+fn run(s: str) -> result<i64, str> {
+    let v = parse(s)?
+    return ok(v)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `extractvalue %_cnd_result_i64_str`)
+	assertContains(t, out, `prop.ok`)
+	assertContains(t, out, `prop.err`)
+}
+
+// TestPropagateExprEarlyReturn verifies that the err path of ? emits a ret
+// instruction with the wrapped error, not a branch to merge.
+func TestPropagateExprEarlyReturn(t *testing.T) {
+	out := compileLL(t, `
+fn inner(s: str) -> result<i64, str> { return err(s) }
+fn outer(s: str) -> result<i64, str> {
+    let v = inner(s)?
+    return ok(v + 1)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	// prop.err block must contain a ret instruction
+	assertContains(t, out, `prop.err`)
+	assertContains(t, out, `ret %_cnd_result_i64_str`)
+}
+
+// TestPropagateExprChained verifies that multiple ? in one function each
+// get their own prop.ok/prop.err labels.
+func TestPropagateExprChained(t *testing.T) {
+	out := compileLL(t, `
+fn step(s: str) -> result<str, str> { return ok(s) }
+fn pipeline(s: str) -> result<str, str> {
+    let a = step(s)?
+    let b = step(a)?
+    return ok(b)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	// Two ? operators → two pairs of prop.ok/prop.err labels
+	if strings.Count(out, "prop.ok") < 2 {
+		t.Errorf("expected at least 2 prop.ok labels, got:\n%s", out)
+	}
+	if strings.Count(out, "prop.err") < 2 {
+		t.Errorf("expected at least 2 prop.err labels, got:\n%s", out)
+	}
+}

@@ -1626,6 +1626,8 @@ func (em *llEmitter) emitExpr(e parser.Expr) (string, error) {
 		return em.emitMatch(ee)
 	case *parser.MustExpr:
 		return em.emitMust(ee)
+	case *parser.PropagateExpr:
+		return em.emitPropagate(ee)
 	case *parser.ReturnExpr:
 		val, err := em.emitExpr(ee.Value)
 		if err != nil {
@@ -3165,6 +3167,67 @@ func (em *llEmitter) emitMust(e *parser.MustExpr) (string, error) {
 		return t, nil
 	}
 	return "undef", nil
+}
+
+// emitPropagate emits expr? as:
+//
+//	%res   = <emit expr>
+//	%disc  = extractvalue %result_T_E %res, 0
+//	br i1 %disc, label %prop.ok, label %prop.err
+//	prop.ok:   %val = extractvalue ... %res, 1  → continue
+//	prop.err:  %e   = extractvalue ... %res, 2  → ret err(%e) from enclosing fn
+func (em *llEmitter) emitPropagate(e *parser.PropagateExpr) (string, error) {
+	resVal, err := em.emitExpr(e.X)
+	if err != nil {
+		return "", err
+	}
+	operandTy, ok := em.res.ExprTypes[e.X].(*typeck.GenType)
+	if !ok || operandTy.Con != "result" || len(operandTy.Params) < 2 {
+		return resVal, nil // not a result type — no-op propagation
+	}
+	llResTy := em.llType(operandTy)
+	okTy := operandTy.Params[0]
+	errTy := operandTy.Params[1]
+
+	okLbl := em.freshBlk("prop.ok")
+	errLbl := em.freshBlk("prop.err")
+	contLbl := em.freshBlk("prop.cont")
+
+	discReg := em.fresh()
+	em.wif(`%s = extractvalue %s %s, 0`, discReg, llResTy, resVal)
+	em.wif(`br i1 %s, label %%%s, label %%%s`, discReg, okLbl, errLbl)
+
+	// err path — extract error, wrap in enclosing fn's result type, return early
+	em.lbl(errLbl)
+	errVal := em.fresh()
+	em.wif(`%s = extractvalue %s %s, 2`, errVal, llResTy, resVal)
+	retGen, isRetResult := em.retType.(*typeck.GenType)
+	if isRetResult && retGen.Con == "result" && len(retGen.Params) >= 2 {
+		llRetTy := em.llType(em.retType)
+		r0 := em.fresh()
+		r1 := em.fresh()
+		em.wif(`%s = insertvalue %s zeroinitializer, i1 0, 0`, r0, llRetTy)
+		em.wif(`%s = insertvalue %s %s, %s %s, 2`, r1, llRetTy, r0, em.llType(errTy), errVal)
+		em.wif(`ret %s %s`, llRetTy, r1)
+	} else {
+		// enclosing fn doesn't return result — emit unreachable (typeck already caught this)
+		em.wi(`unreachable`)
+	}
+
+	// ok path — extract value and continue
+	em.lbl(okLbl)
+	var okVal string
+	if isVoidTy(okTy) {
+		okVal = "undef"
+		em.wif(`br label %%%s`, contLbl)
+	} else {
+		okVal = em.fresh()
+		em.wif(`%s = extractvalue %s %s, 1`, okVal, llResTy, resVal)
+		em.wif(`br label %%%s`, contLbl)
+	}
+
+	em.lbl(contLbl)
+	return okVal, nil
 }
 
 // ── lvalue helpers ─────────────────────────────────────────────────────────────
