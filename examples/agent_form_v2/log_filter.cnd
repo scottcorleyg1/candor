@@ -1,0 +1,77 @@
+## log_filter.cnd — Agent Form v2
+## Signatures: ->?T io / ->?T pure shorthand.
+## Bodies: ? everywhere errors propagate directly (error context dropped).
+## must{} kept only where behavior is non-propagating (print+return in main).
+
+fn read_log(path: str) -> ?str io {
+    read_file(path)
+}
+
+fn write_log(path: str, data: str) -> ?unit io {
+    write_file(path, data)
+}
+
+fn parse_level(line: str) -> option<str> pure {
+    if str_len(line) < 3 { return none }
+    if not str_starts_with(line, "[") { return none }
+    let close = str_find(line, "]", 1) must {
+        some(i) => i
+        none    => return none
+    }
+    some(str_substr(line, 1, close - 1))
+}
+
+fn keep_line(line: str, level: str) -> bool pure {
+    let lvl = parse_level(line) must {
+        some(s) => s
+        none    => return false
+    }
+    str_eq(lvl, level)
+}
+
+fn filter_lines(lines: vec<str>, level: str) -> vec<str> pure {
+    let mut out: vec<str> = vec_new()
+    let n = vec_len(lines) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let line = lines[i as u64]
+        if keep_line(line, level) { vec_push(out, line) }
+        i = i + 1
+    }
+    out
+}
+
+fn run_filter(path_in: str, path_out: str, level: str) -> ?i64 io {
+    let raw   = read_log(path_in)?
+    let lines = str_split(raw, "\n")
+    let kept  = filter_lines(lines, level)
+    let n_kept = vec_len(kept) as i64
+    let mut out: str = ""
+    let mut i: i64 = 0
+    loop {
+        if i >= n_kept { break }
+        out = str_concat(out, str_concat(kept[i as u64], "\n"))
+        i = i + 1
+    }
+    write_log(path_out, out)?
+    ok(n_kept)
+}
+
+fn main() -> unit io {
+    let log = str_concat(
+        "[ERROR] disk full\n",
+        str_concat("[INFO] server started\n",
+        str_concat("[WARN] high memory\n",
+        str_concat("[ERROR] connection refused\n",
+        "[INFO] request received\n"))))
+    write_log("examples/sample.log", log) must {
+        ok(_)  => unit
+        err(e) => { print(str_concat("setup error: ", e))  return unit }
+    }
+    match run_filter("examples/sample.log", "examples/errors.log", "ERROR") {
+        ok(n)  => print(str_concat(int_to_str(n), " ERROR lines written to errors.log"))
+        err(e) => print(str_concat("filter failed: ", e))
+    }
+    return unit
+}

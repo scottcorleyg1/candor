@@ -2,6 +2,8 @@
 
 *Tags: #programming #ai #languages #compilers*
 
+**TL;DR** — Built a systems programming language optimized for AI token efficiency. Measured every keyword against Claude's real tokenizer. 36/37 keywords = 1 token each. The `?` operator eliminates 83% of error-handling boilerplate per site. A complete IO function goes from 106 tokens to 42 — same program, same output. Also covers machine-verifiable purity in LLVM IR and why `|>` costs tokens but stays in anyway.
+
 ---
 
 I want to be upfront about something: I'm not a professional programmer. I'm an automation engineer. I've written scripts and code on and off throughout my career — enough to get things done, not enough to call it my day job.

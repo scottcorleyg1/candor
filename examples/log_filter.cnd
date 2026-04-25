@@ -1,0 +1,103 @@
+## log_filter.cnd — filter log lines by severity level
+##
+## Token density showcase:
+##   pure      parse_level, keep_line, filter_lines — compiler-verified, no I/O possible
+##   effects(io)  read_log, write_log, run_filter — file I/O declared in every signature
+##   result<T,E>  all I/O operations are explicitly fallible; silent discard is a compile error
+##
+## Compile: candorc examples/log_filter.cnd
+## Run:     ./log_filter
+
+## Wrapper functions whose return types trigger the result typedef generation needed
+## for read_file and write_file builtins in single-file programs.
+fn read_log(path: str) -> result<str, str> effects(io) {
+    read_file(path)
+}
+
+fn write_log(path: str, data: str) -> result<unit, str> effects(io) {
+    write_file(path, data)
+}
+
+## Parse the severity level from "[LEVEL] message" format.
+## Pure: cannot touch the filesystem, network, clock, or any external state.
+## This guarantee is in the signature. In Go/Rust/Python it would be in a comment.
+fn parse_level(line: str) -> option<str> pure {
+    if str_len(line) < 3 { return none }
+    if not str_starts_with(line, "[") { return none }
+    let close = str_find(line, "]", 1) must {
+        some(i) => i
+        none    => return none
+    }
+    some(str_substr(line, 1, close - 1))
+}
+
+## Pure: returns true if the line belongs to the given level.
+fn keep_line(line: str, level: str) -> bool pure {
+    let lvl = parse_level(line) must {
+        some(s) => s
+        none    => return false
+    }
+    str_eq(lvl, level)
+}
+
+## Pure: builds a filtered copy of the input vec. No mutation of the original.
+fn filter_lines(lines: vec<str>, level: str) -> vec<str> pure {
+    let mut out: vec<str> = vec_new()
+    let n = vec_len(lines) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let line = lines[i as u64]
+        if keep_line(line, level) {
+            vec_push(out, line)
+        }
+        i = i + 1
+    }
+    out
+}
+
+## effects(io): reads path_in, filters to `level`, writes path_out.
+## Signature tells an AI (or human reviewer) everything: two file paths, a filter level,
+## returns the count of kept lines or a string error, performs I/O.
+fn run_filter(path_in: str, path_out: str, level: str) -> result<i64, str> effects(io) {
+    let raw = read_log(path_in) must {
+        ok(s)  => s
+        err(_) => return err(str_concat("cannot read: ", path_in))
+    }
+    let lines = str_split(raw, "\n")
+    let kept  = filter_lines(lines, level)
+    let n_kept = vec_len(kept) as i64
+    let mut out: str = ""
+    let mut i: i64 = 0
+    loop {
+        if i >= n_kept { break }
+        out = str_concat(out, str_concat(kept[i as u64], "\n"))
+        i = i + 1
+    }
+    write_log(path_out, out) must {
+        ok(_)  => unit
+        err(e) => return err(str_concat("cannot write: ", e))
+    }
+    ok(n_kept)
+}
+
+fn main() -> unit effects(io) {
+    let log = str_concat(
+        "[ERROR] disk full\n",
+        str_concat("[INFO] server started\n",
+        str_concat("[WARN] high memory\n",
+        str_concat("[ERROR] connection refused\n",
+        "[INFO] request received\n"))))
+    write_log("examples/sample.log", log) must {
+        ok(_)  => unit
+        err(e) => {
+            print(str_concat("setup error: ", e))
+            return unit
+        }
+    }
+    match run_filter("examples/sample.log", "examples/errors.log", "ERROR") {
+        ok(n)  => print(str_concat(int_to_str(n), " ERROR lines written to errors.log"))
+        err(e) => print(str_concat("filter failed: ", e))
+    }
+    return unit
+}

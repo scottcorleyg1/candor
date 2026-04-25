@@ -35,13 +35,7 @@ EXAMPLES_DIR = REPO_ROOT / "examples"
 AGENT_FORM_DIR = EXAMPLES_DIR / "agent_form"
 RESULTS_DIR = Path(__file__).parent / "results"
 
-# Pairs: (verification_form_path, agent_form_path, label)
-CORPUS_PAIRS = [
-    ("log_filter.cnd",  "log_filter.cnd",  "log_filter"),
-    ("word_stats.cnd",  "word_stats.cnd",  "word_stats"),
-    ("config.cnd",      "config.cnd",      "config"),
-    ("pipeline.cnd",    "pipeline.cnd",    "pipeline"),
-]
+CORPUS_FILES = ["log_filter.cnd", "word_stats.cnd", "config.cnd", "pipeline.cnd"]
 
 
 def count_tokens(client: anthropic.Anthropic, model: str, text: str, baseline: int) -> int:
@@ -68,10 +62,11 @@ def mean_std(values: list[float]) -> tuple[float, float]:
     return m, math.sqrt(variance)
 
 
-def run_corpus_benchmark(model: str) -> dict:
+def run_corpus_benchmark(model: str, agent_dir: Path) -> dict:
     client = anthropic.Anthropic()
 
     print(f"Model: {model}")
+    print(f"Agent form dir: {agent_dir.name}")
     print("Establishing baseline...", flush=True)
     baseline = get_baseline(client, model)
     print(f"Baseline overhead: {baseline} tokens\n")
@@ -79,15 +74,17 @@ def run_corpus_benchmark(model: str) -> dict:
     results = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "model": model,
+        "agent_dir": agent_dir.name,
         "baseline_overhead": baseline,
         "files": {}
     }
 
     savings_pcts = []
 
-    for vf_name, af_name, label in CORPUS_PAIRS:
-        vf_path = EXAMPLES_DIR / vf_name
-        af_path = AGENT_FORM_DIR / af_name
+    for fname in CORPUS_FILES:
+        label = fname.replace(".cnd", "")
+        vf_path = EXAMPLES_DIR / fname
+        af_path = agent_dir / fname
 
         if not vf_path.exists():
             print(f"  SKIP {label}: {vf_path} not found")
@@ -114,8 +111,6 @@ def run_corpus_benchmark(model: str) -> dict:
             "agent_tokens": af_tok,
             "tokens_saved": saved,
             "savings_pct": pct,
-            "lines_verification": vf_text.count("\n"),
-            "lines_agent": af_text.count("\n"),
         }
         print(f" {vf_tok} -> {af_tok} tok  ({pct}% savings)")
 
@@ -162,6 +157,8 @@ def main():
     parser = argparse.ArgumentParser(description="Candor corpus token benchmark")
     parser.add_argument("--model", default="claude-sonnet-4-6",
                         help="Model to benchmark against (default: claude-sonnet-4-6)")
+    parser.add_argument("--agent-dir", default="agent_form",
+                        help="Subdirectory of examples/ containing agent form files (default: agent_form)")
     parser.add_argument("--save", action="store_true",
                         help="Save results to results/ directory")
     args = parser.parse_args()
@@ -170,14 +167,16 @@ def main():
         print("Error: ANTHROPIC_API_KEY not set", file=sys.stderr)
         sys.exit(1)
 
-    results = run_corpus_benchmark(args.model)
+    agent_dir = EXAMPLES_DIR / args.agent_dir
+    results = run_corpus_benchmark(args.model, agent_dir)
     print_report(results)
 
     if args.save:
         RESULTS_DIR.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y-%m-%d")
         model_slug = args.model.replace("/", "-")
-        out_path = RESULTS_DIR / f"{ts}_corpus_{model_slug}.json"
+        dir_slug = args.agent_dir.replace("/", "-").replace("_", "-")
+        out_path = RESULTS_DIR / f"{ts}_corpus_{dir_slug}_{model_slug}.json"
         out_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
         print(f"\nResults saved to {out_path.relative_to(REPO_ROOT)}")
 

@@ -1,0 +1,88 @@
+## config.cnd — key=value config file parser
+##
+## Token density showcase:
+##   effects(io)  declared in signature — no need to read the body to know this does I/O
+##   pure         compiler-verified guarantee on parse helpers — not a comment, not trust
+##   result<T,E>  every error path is named and must be handled — silence is a compile error
+##
+## Compile: candorc examples/config.cnd
+## Run:     ./config   (writes a test file, reads it back, prints parsed values)
+
+struct Config {
+    host:  str
+    port:  str
+    debug: str
+}
+
+## Pure: touches no external state — compiler proves it.
+## Go/Rust/Python callers must read the body to know this. Candor callers read the signature.
+fn parse_line(line: str) -> result<str, str> pure {
+    if str_len(line) == 0 { return err("empty line") }
+    let sep = str_find(line, "=", 0) must {
+        some(i) => i
+        none    => return err(str_concat("missing '=' in: ", line))
+    }
+    if sep == 0 { return err(str_concat("empty key in: ", line)) }
+    ok(line)
+}
+
+fn get_key(line: str) -> str pure {
+    let sep = str_find(line, "=", 0) must {
+        some(i) => i
+        none    => return ""
+    }
+    str_substr(line, 0, sep)
+}
+
+fn get_val(line: str) -> str pure {
+    let n = str_len(line)
+    let sep = str_find(line, "=", 0) must {
+        some(i) => i
+        none    => return ""
+    }
+    str_substr(line, sep + 1, n - sep - 1)
+}
+
+## effects(io): reads a file. Every caller that reaches this function must also declare
+## effects(io) — the I/O propagates upward through the call graph, visibly.
+fn load_config(path: str) -> result<Config, str> effects(io) {
+    let raw = read_file(path) must {
+        ok(s)  => s
+        err(_) => return err(str_concat("file not found: ", path))
+    }
+    let lines = str_split(raw, "\n")
+    let mut host:  str = ""
+    let mut port:  str = ""
+    let mut dbg:   str = ""
+    let n = vec_len(lines) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let line = str_trim(lines[i as u64])
+        if str_len(line) > 0 {
+            let _v = parse_line(line) must {
+                ok(v)  => v
+                err(e) => return err(str_concat("line ", str_concat(int_to_str(i + 1), str_concat(": ", e))))
+            }
+            let k = get_key(line)
+            let v = get_val(line)
+            if str_eq(k, "host")  { host = v }
+            if str_eq(k, "port")  { port = v }
+            if str_eq(k, "debug") { dbg  = v }
+        }
+        i = i + 1
+    }
+    ok(Config{ host: host, port: port, debug: dbg })
+}
+
+fn main() -> unit effects(io) {
+    match load_config("examples/config_test.txt") {
+        ok(cfg) => {
+            print(str_concat("host=",  cfg.host))
+            print(str_concat("port=",  cfg.port))
+            print(str_concat("debug=", cfg.debug))
+        }
+        err(e) => print(str_concat("error: ", e))
+    }
+    return unit
+}

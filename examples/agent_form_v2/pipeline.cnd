@@ -1,0 +1,88 @@
+## pipeline.cnd — Agent Form v2
+## ? throughout: parse_row, validate_row, read_csv all use direct propagation.
+## Error context ("parse error: ", "validation error: ") dropped.
+
+struct Row { name: str  score: i64 }
+struct Summary { count: i64  total: i64  highest: str }
+
+fn parse_row(line: str) -> ?Row pure {
+    let sep = str_find(line, ",", 0) must {
+        some(i) => i
+        none    => return err(str_concat("missing comma in: '", str_concat(line, "'")))
+    }
+    let name      = str_substr(line, 0, sep)
+    let score_str = str_substr(line, sep + 1, str_len(line) - sep - 1)
+    if str_len(name) == 0      { return err("empty name") }
+    if str_len(score_str) == 0 { return err("empty score") }
+    let mut score: i64 = 0
+    let sn = str_len(score_str)
+    let mut i: i64 = 0
+    loop {
+        if i >= sn { break }
+        let c = str_byte(score_str, i)
+        if c < 48 or c > 57 { return err(str_concat("non-numeric score: '", str_concat(score_str, "'"))) }
+        score = score * 10 + (c as i64 - 48)
+        i = i + 1
+    }
+    ok(Row{ name: name, score: score })
+}
+
+fn validate_row(r: Row) -> ?Row pure {
+    if str_len(r.name) > 50 { return err(str_concat("name too long: ", r.name)) }
+    if r.score < 0          { return err(str_concat("negative score for: ", r.name)) }
+    if r.score > 100        { return err(str_concat("score over 100 for: ", r.name)) }
+    ok(r)
+}
+
+fn summarize(rows: vec<Row>) -> Summary pure {
+    let n = vec_len(rows) as i64
+    let mut total: i64 = 0
+    let mut best_score: i64 = -1
+    let mut best_name: str = ""
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let r = rows[i as u64]
+        total = total + r.score
+        if r.score > best_score { best_score = r.score  best_name = r.name }
+        i = i + 1
+    }
+    Summary{ count: n, total: total, highest: best_name }
+}
+
+fn read_csv(path: str) -> ?str io { read_file(path) }
+
+fn run_pipeline(path: str) -> ?Summary io {
+    let raw    = read_csv(path)?
+    let lines  = str_split(raw, "\n")
+    let mut rows: vec<Row> = vec_new()
+    let n = vec_len(lines) as i64
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let line = str_trim(lines[i as u64])
+        if str_len(line) > 0 {
+            let parsed = parse_row(line)?
+            let valid  = validate_row(parsed)?
+            vec_push(rows, valid)
+        }
+        i = i + 1
+    }
+    ok(summarize(rows))
+}
+
+fn main() -> unit io {
+    write_file("examples/scores.csv", "Alice,95\nBob,82\nCarol,78\nDave,91\n") must {
+        ok(_)  => unit
+        err(e) => { print(str_concat("setup error: ", e))  return unit }
+    }
+    match run_pipeline("examples/scores.csv") {
+        ok(s) => {
+            print(str_concat("count:   ", int_to_str(s.count)))
+            print(str_concat("total:   ", int_to_str(s.total)))
+            print(str_concat("highest: ", s.highest))
+        }
+        err(e) => print(str_concat("pipeline failed: ", e))
+    }
+    return unit
+}

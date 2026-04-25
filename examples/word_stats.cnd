@@ -1,0 +1,91 @@
+## word_stats.cnd — count words, characters, and lines in a text file
+##
+## Token density showcase — the purity argument in its strongest form:
+##
+##   In Python/Go/Rust, `count_words(text)` and `read_text(path)` look identical
+##   in their signatures. You must read the body (or trust a comment) to know one
+##   has side effects and the other does not.
+##
+##   In Candor:
+##     fn count_words(text: str) -> i64 pure        ← compiler PROVES no side effects
+##     fn read_text(path: str) -> result<str,str> effects(io)  ← compiler PROVES has I/O
+##
+##   The signature IS the specification. No body reading required.
+##
+## Compile: candorc examples/word_stats.cnd
+## Run:     ./word_stats
+
+struct Stats {
+    lines: i64
+    words: i64
+    chars: i64
+}
+
+## Pure: counts newlines. Compiler-verified: cannot call print, read_file, or any I/O.
+fn count_lines(text: str) -> i64 pure {
+    let n = str_len(text)
+    let mut count: i64 = 0
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        if str_byte(text, i) == 10 { count = count + 1 }
+        i = i + 1
+    }
+    count
+}
+
+## Pure: counts whitespace-delimited words.
+fn count_words(text: str) -> i64 pure {
+    let n = str_len(text)
+    let mut count: i64 = 0
+    let mut in_word: bool = false
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let c = str_byte(text, i)
+        let is_space = c == 32 or c == 9 or c == 10 or c == 13
+        if not is_space and not in_word {
+            count = count + 1
+            in_word = true
+        }
+        if is_space { in_word = false }
+        i = i + 1
+    }
+    count
+}
+
+## Pure: all three stats computed from the string — no I/O at any point.
+fn compute_stats(text: str) -> Stats pure {
+    Stats{
+        lines: count_lines(text),
+        words: count_words(text),
+        chars: str_len(text)
+    }
+}
+
+## Wrapper to trigger result<str,str> typedef (needed by read_file builtin).
+fn read_text(path: str) -> result<str, str> effects(io) {
+    read_file(path)
+}
+
+## effects(io): the ONLY function in this file that touches the filesystem.
+## Every other function is pure — and the compiler enforces that guarantee.
+fn analyze_file(path: str) -> result<Stats, str> effects(io) {
+    let text = read_text(path) must {
+        ok(s)  => s
+        err(_) => return err(str_concat("cannot read: ", path))
+    }
+    ok(compute_stats(text))
+}
+
+fn main() -> unit effects(io) {
+    match analyze_file("examples/config_test.txt") {
+        ok(s) => {
+            print(str_concat("lines: ", int_to_str(s.lines)))
+            print(str_concat("words: ", int_to_str(s.words)))
+            print(str_concat("chars: ", int_to_str(s.chars)))
+        }
+        err(e) => print(str_concat("error: ", e))
+    }
+    return unit
+}

@@ -1,0 +1,55 @@
+## word_stats.cnd — Agent Form v2
+## ? for all propagating error paths (error context dropped).
+
+struct Stats { lines: i64  words: i64  chars: i64 }
+
+fn count_lines(text: str) -> i64 pure {
+    let n = str_len(text)
+    let mut count: i64 = 0
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        if str_byte(text, i) == 10 { count = count + 1 }
+        i = i + 1
+    }
+    count
+}
+
+fn count_words(text: str) -> i64 pure {
+    let n = str_len(text)
+    let mut count: i64 = 0
+    let mut in_word: bool = false
+    let mut i: i64 = 0
+    loop {
+        if i >= n { break }
+        let c = str_byte(text, i)
+        let is_space = c == 32 or c == 9 or c == 10 or c == 13
+        if not is_space and not in_word { count = count + 1  in_word = true }
+        if is_space { in_word = false }
+        i = i + 1
+    }
+    count
+}
+
+fn compute_stats(text: str) -> Stats pure {
+    Stats{ lines: count_lines(text), words: count_words(text), chars: str_len(text) }
+}
+
+fn read_text(path: str) -> ?str io { read_file(path) }
+
+fn analyze_file(path: str) -> ?Stats io {
+    let text = read_text(path)?
+    ok(compute_stats(text))
+}
+
+fn main() -> unit io {
+    match analyze_file("examples/config_test.txt") {
+        ok(s) => {
+            print(str_concat("lines: ", int_to_str(s.lines)))
+            print(str_concat("words: ", int_to_str(s.words)))
+            print(str_concat("chars: ", int_to_str(s.chars)))
+        }
+        err(e) => print(str_concat("error: ", e))
+    }
+    return unit
+}
