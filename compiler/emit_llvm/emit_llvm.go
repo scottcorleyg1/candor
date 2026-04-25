@@ -34,12 +34,13 @@ import (
 // target is an LLVM target triple (e.g. "aarch64-unknown-linux-gnu"); empty means host default.
 func EmitLLVM(file *parser.File, res *typeck.Result, target string) (string, error) {
 	em := &llEmitter{
-		res:           res,
-		target:        target,
-		strPool:       make(map[string]string),
-		structFields:  make(map[string][]string),
-		enumPayload:   make(map[string]int),
-		mapEntryTypes: make(map[string]bool),
+		res:             res,
+		target:          target,
+		strPool:         make(map[string]string),
+		structFields:    make(map[string][]string),
+		enumPayload:     make(map[string]int),
+		mapEntryTypes:   make(map[string]bool),
+		resultTypeDecls: make(map[string]bool),
 	}
 	em.buildLayouts(file)
 	em.collectStrings(file)
@@ -62,7 +63,8 @@ type llEmitter struct {
 
 	structFields  map[string][]string // struct name → ordered field names
 	enumPayload   map[string]int      // enum name → max payload bytes
-	mapEntryTypes map[string]bool     // declared %_cnd_map_entry_K_V type names
+	mapEntryTypes   map[string]bool     // declared %_cnd_map_entry_K_V type names
+	resultTypeDecls map[string]bool     // declared %_cnd_result_T_E struct type names
 
 	// per-function state (reset before each function)
 	tmpCount   int
@@ -102,6 +104,89 @@ func (em *llEmitter) buildLayouts(file *parser.File) {
 			}
 			em.enumPayload[dd.Name.Lexeme] = maxBytes
 		}
+	}
+}
+
+// ── result<T,E> type helpers ───────────────────────────────────────────────────
+
+// mangleTy returns an identifier-safe string for a type, used in result struct names.
+func (em *llEmitter) mangleTy(t typeck.Type) string {
+	switch t {
+	case typeck.TUnit:                    return "unit"
+	case typeck.TBool:                    return "bool"
+	case typeck.TStr:                     return "str"
+	case typeck.TI8:                      return "i8"
+	case typeck.TU8:                      return "u8"
+	case typeck.TI16:                     return "i16"
+	case typeck.TU16:                     return "u16"
+	case typeck.TI32:                     return "i32"
+	case typeck.TU32:                     return "u32"
+	case typeck.TI64, typeck.TIntLit:     return "i64"
+	case typeck.TU64:                     return "u64"
+	case typeck.TF16:                     return "f16"
+	case typeck.TBF16:                    return "bf16"
+	case typeck.TF32:                     return "f32"
+	case typeck.TF64, typeck.TFloatLit:   return "f64"
+	case typeck.TI128:                    return "i128"
+	case typeck.TU128:                    return "u128"
+	}
+	switch tt := t.(type) {
+	case *typeck.StructType: return tt.Name
+	case *typeck.EnumType:   return tt.Name
+	case *typeck.GenType:
+		s := tt.Con
+		for _, p := range tt.Params {
+			s += "_" + em.mangleTy(p)
+		}
+		return s
+	}
+	return "ptr"
+}
+
+// ensureResultTypeDecl declares %_cnd_result_T_E in the header if not already done.
+// Struct layout: { i1 discriminant, T ok_val (or i8 dummy if unit), E err_val }
+// Indices are always: 0=disc, 1=ok_val, 2=err_val.
+func (em *llEmitter) ensureResultTypeDecl(t *typeck.GenType) string {
+	if len(t.Params) < 2 {
+		return "ptr"
+	}
+	name := "_cnd_result_" + em.mangleTy(t.Params[0]) + "_" + em.mangleTy(t.Params[1])
+	if !em.resultTypeDecls[name] {
+		em.resultTypeDecls[name] = true
+		errLL := em.llType(t.Params[1])
+		if isVoidTy(t.Params[0]) {
+			em.hf(`%%%s = type { i1, i8, %s }`, name, errLL)
+		} else {
+			okLL := em.llType(t.Params[0])
+			em.hf(`%%%s = type { i1, %s, %s }`, name, okLL, errLL)
+		}
+	}
+	return "%" + name
+}
+
+// collectResultTypeDecls pre-scans all types in the file and emits result struct declarations.
+func (em *llEmitter) collectResultTypeDecls(file *parser.File) {
+	for _, t := range em.res.ExprTypes {
+		em.scanTypeForResult(t)
+	}
+	for _, sig := range em.res.FnSigs {
+		em.scanTypeForResult(sig.Ret)
+		for _, p := range sig.Params {
+			em.scanTypeForResult(p)
+		}
+	}
+}
+
+func (em *llEmitter) scanTypeForResult(t typeck.Type) {
+	g, ok := t.(*typeck.GenType)
+	if !ok {
+		return
+	}
+	if g.Con == "result" && len(g.Params) == 2 {
+		em.ensureResultTypeDecl(g)
+	}
+	for _, p := range g.Params {
+		em.scanTypeForResult(p)
 	}
 }
 
@@ -191,7 +276,12 @@ func (em *llEmitter) llType(t typeck.Type) string {
 			return "%_cnd_vec"
 		case "ring":
 			return "%_cnd_ring"
-		case "ref", "refmut", "option", "result", "map", "set", "box", "arc":
+		case "result":
+			if len(tt.Params) == 2 {
+				return em.ensureResultTypeDecl(tt)
+			}
+			return "ptr"
+		case "ref", "refmut", "option", "map", "set", "box", "arc":
 			return "ptr"
 		}
 		return "ptr"
@@ -417,6 +507,7 @@ func (em *llEmitter) emitFile(file *parser.File) error {
 	em.h(`%_cnd_map = type { ptr, i64, i64 }`)
 	em.h(``)
 
+	em.collectResultTypeDecls(file)  // result<T,E> named struct declarations before user types
 	em.emitStructTypeDecls(file)
 	em.emitEnumTypeDecls(file)
 	em.emitLambdaTypeDecls()
@@ -2403,6 +2494,50 @@ func (em *llEmitter) emitBuiltinCall(e *parser.CallExpr, name string) (string, b
 		result := em.fresh()
 		em.wif(`%s = phi ptr [ null, %%%s ], [ %s, %%%s ]`, result, emptyLbl, allocBuf, popLbl)
 		return result, true, nil
+
+	// ── result constructors ───────────────────────────────────────────────────
+
+	case "ok":
+		// ok(v) → insertvalue result<T,E> zeroinitializer, i1 1, 0; insertvalue ..., T v, 1
+		retTy, ok2 := em.res.ExprTypes[e].(*typeck.GenType)
+		if !ok2 || retTy.Con != "result" || len(retTy.Params) < 2 {
+			return "undef", true, fmt.Errorf("emit_llvm: ok() without result<T,E> return type")
+		}
+		llTy := em.ensureResultTypeDecl(retTy)
+		okTy := retTy.Params[0]
+		cur := em.fresh()
+		em.wif(`%s = insertvalue %s zeroinitializer, i1 1, 0`, cur, llTy)
+		if !isVoidTy(okTy) && len(e.Args) == 1 {
+			val, verr := em.emitExpr(e.Args[0])
+			if verr != nil {
+				return "undef", true, verr
+			}
+			prev := cur
+			cur = em.fresh()
+			em.wif(`%s = insertvalue %s %s, %s %s, 1`, cur, llTy, prev, em.llType(okTy), val)
+		}
+		return cur, true, nil
+
+	case "err":
+		// err(e) → insertvalue result<T,E> zeroinitializer, i1 0, 0; insertvalue ..., E e, 2
+		retTy, ok2 := em.res.ExprTypes[e].(*typeck.GenType)
+		if !ok2 || retTy.Con != "result" || len(retTy.Params) < 2 {
+			return "undef", true, fmt.Errorf("emit_llvm: err() without result<T,E> return type")
+		}
+		llTy := em.ensureResultTypeDecl(retTy)
+		errTy := retTy.Params[1]
+		cur := em.fresh()
+		em.wif(`%s = insertvalue %s zeroinitializer, i1 0, 0`, cur, llTy)
+		if len(e.Args) == 1 {
+			val, verr := em.emitExpr(e.Args[0])
+			if verr != nil {
+				return "undef", true, verr
+			}
+			prev := cur
+			cur = em.fresh()
+			em.wif(`%s = insertvalue %s %s, %s %s, 2`, cur, llTy, prev, em.llType(errTy), val)
+		}
+		return cur, true, nil
 	}
 
 	return "", false, nil
@@ -2698,7 +2833,83 @@ func (em *llEmitter) emitMatch(e *parser.MatchExpr) (string, error) {
 
 	et, isEnum := matchTy.(*typeck.EnumType)
 
-	if isEnum {
+	// ── result<T,E> match ──────────────────────────────────────────────────────
+	if gen, isResult := matchTy.(*typeck.GenType); isResult && gen.Con == "result" && len(gen.Params) == 2 {
+		llResultTy := em.llType(matchTy)
+		okTy := gen.Params[0]
+		errTy := gen.Params[1]
+
+		// Classify arms: find ok(v), err(e), and wildcard _ arm indices.
+		okArmIdx, errArmIdx, wildcardArmIdx := -1, -1, -1
+		for i, arm := range e.Arms {
+			if call, isc := arm.Pattern.(*parser.CallExpr); isc {
+				if fn, isId := call.Fn.(*parser.IdentExpr); isId {
+					switch fn.Tok.Lexeme {
+					case "ok":
+						okArmIdx = i
+					case "err":
+						errArmIdx = i
+					}
+				}
+			} else if id, isId := arm.Pattern.(*parser.IdentExpr); isId && id.Tok.Lexeme == "_" {
+				wildcardArmIdx = i
+			}
+		}
+
+		okLbl := em.freshBlk("result.ok")
+		errLbl := em.freshBlk("result.err")
+
+		discReg := em.fresh()
+		em.wif(`%s = extractvalue %s %s, 0`, discReg, llResultTy, matchVal)
+		em.wif(`br i1 %s, label %%%s, label %%%s`, discReg, okLbl, errLbl)
+
+		// Emit one result arm; payloadIdx is 1 for ok, 2 for err.
+		emitResultArm := func(armIdx, payloadIdx int, payloadTy typeck.Type, branchLbl string) error {
+			em.lbl(branchLbl)
+			if armIdx == -1 {
+				armIdx = wildcardArmIdx
+			}
+			if armIdx == -1 {
+				em.wif(`br label %%%s`, mergeLbl)
+				return nil
+			}
+			arm := e.Arms[armIdx]
+			var boundName string
+			if call, isc := arm.Pattern.(*parser.CallExpr); isc && len(call.Args) == 1 {
+				if id, isId := call.Args[0].(*parser.IdentExpr); isId && id.Tok.Lexeme != "_" && !isVoidTy(payloadTy) {
+					extracted := em.fresh()
+					em.wif(`%s = extractvalue %s %s, %d`, extracted, llResultTy, matchVal, payloadIdx)
+					varAddr := em.fresh()
+					em.wif(`%s = alloca %s`, varAddr, em.llType(payloadTy))
+					em.wif(`store %s %s, ptr %s`, em.llType(payloadTy), extracted, varAddr)
+					em.locals[id.Tok.Lexeme] = varAddr
+					em.localTypes[id.Tok.Lexeme] = payloadTy
+					boundName = id.Tok.Lexeme
+				}
+			}
+			armVal, aerr := em.emitExpr(arm.Body)
+			if boundName != "" {
+				delete(em.locals, boundName)
+				delete(em.localTypes, boundName)
+			}
+			if aerr != nil {
+				return aerr
+			}
+			if resultAddr != "" && !isVoidTy(retTy) {
+				em.wif(`store %s %s, ptr %s`, em.llType(retTy), armVal, resultAddr)
+			}
+			em.wif(`br label %%%s`, mergeLbl)
+			return nil
+		}
+
+		if err := emitResultArm(okArmIdx, 1, okTy, okLbl); err != nil {
+			return "", err
+		}
+		if err := emitResultArm(errArmIdx, 2, errTy, errLbl); err != nil {
+			return "", err
+		}
+
+	} else if isEnum {
 		// Extract tag.
 		tagReg := em.fresh()
 		em.wif(`%s = extractvalue %s %s, 0`, tagReg, em.llType(matchTy), matchVal)
@@ -2847,9 +3058,113 @@ func (em *llEmitter) emitMatch(e *parser.MatchExpr) (string, error) {
 }
 
 func (em *llEmitter) emitMust(e *parser.MustExpr) (string, error) {
-	// Simplified: just evaluate the operand.
-	em.wi(`; must expr — simplified`)
-	return em.emitExpr(e.X)
+	operandVal, err := em.emitExpr(e.X)
+	if err != nil {
+		return "", err
+	}
+	operandTy := em.res.ExprTypes[e.X]
+	retTy := em.res.ExprTypes[e]
+	if retTy == nil {
+		retTy = typeck.TUnit
+	}
+
+	gen, isResult := operandTy.(*typeck.GenType)
+	if !isResult || gen.Con != "result" || len(gen.Params) < 2 {
+		// Non-result must: fall through (shouldn't normally occur).
+		return operandVal, nil
+	}
+
+	llResultTy := em.llType(operandTy)
+	okTy := gen.Params[0]
+	errTy := gen.Params[1]
+
+	mergeLbl := em.freshBlk("must.merge")
+	okLbl := em.freshBlk("must.ok")
+	errLbl := em.freshBlk("must.err")
+
+	var resultAddr string
+	if !isVoidTy(retTy) {
+		resultAddr = em.fresh()
+		em.wif(`%s = alloca %s`, resultAddr, em.llType(retTy))
+	}
+
+	discReg := em.fresh()
+	em.wif(`%s = extractvalue %s %s, 0`, discReg, llResultTy, operandVal)
+	em.wif(`br i1 %s, label %%%s, label %%%s`, discReg, okLbl, errLbl)
+
+	wildcardArmIdx := -1
+	for i, arm := range e.Arms {
+		if id, isId := arm.Pattern.(*parser.IdentExpr); isId && id.Tok.Lexeme == "_" {
+			wildcardArmIdx = i
+		}
+	}
+
+	emitArm := func(armIdx, payloadIdx int, payloadTy typeck.Type, branchLbl string) error {
+		em.lbl(branchLbl)
+		if armIdx == -1 {
+			armIdx = wildcardArmIdx
+		}
+		if armIdx == -1 {
+			em.wif(`br label %%%s`, mergeLbl)
+			return nil
+		}
+		arm := e.Arms[armIdx]
+		var boundName string
+		if call, isc := arm.Pattern.(*parser.CallExpr); isc && len(call.Args) == 1 {
+			if id, isId := call.Args[0].(*parser.IdentExpr); isId && id.Tok.Lexeme != "_" && !isVoidTy(payloadTy) {
+				extracted := em.fresh()
+				em.wif(`%s = extractvalue %s %s, %d`, extracted, llResultTy, operandVal, payloadIdx)
+				varAddr := em.fresh()
+				em.wif(`%s = alloca %s`, varAddr, em.llType(payloadTy))
+				em.wif(`store %s %s, ptr %s`, em.llType(payloadTy), extracted, varAddr)
+				em.locals[id.Tok.Lexeme] = varAddr
+				em.localTypes[id.Tok.Lexeme] = payloadTy
+				boundName = id.Tok.Lexeme
+			}
+		}
+		armVal, aerr := em.emitExpr(arm.Body)
+		if boundName != "" {
+			delete(em.locals, boundName)
+			delete(em.localTypes, boundName)
+		}
+		if aerr != nil {
+			return aerr
+		}
+		if resultAddr != "" && !isVoidTy(retTy) {
+			em.wif(`store %s %s, ptr %s`, em.llType(retTy), armVal, resultAddr)
+		}
+		em.wif(`br label %%%s`, mergeLbl)
+		return nil
+	}
+
+	okArmIdx, errArmIdx := -1, -1
+	for i, arm := range e.Arms {
+		if call, isc := arm.Pattern.(*parser.CallExpr); isc {
+			if fn, isId := call.Fn.(*parser.IdentExpr); isId {
+				switch fn.Tok.Lexeme {
+				case "ok":
+					okArmIdx = i
+				case "err":
+					errArmIdx = i
+				}
+			}
+		}
+	}
+
+	if err := emitArm(okArmIdx, 1, okTy, okLbl); err != nil {
+		return "", err
+	}
+	if err := emitArm(errArmIdx, 2, errTy, errLbl); err != nil {
+		return "", err
+	}
+
+	em.lbl(mergeLbl)
+	if resultAddr != "" && !isVoidTy(retTy) {
+		t := em.fresh()
+		em.wif(`%s = load %s, ptr %s`, t, em.llType(retTy), resultAddr)
+		return t, nil
+	}
+	return "undef", nil
 }
 
 // ── lvalue helpers ─────────────────────────────────────────────────────────────

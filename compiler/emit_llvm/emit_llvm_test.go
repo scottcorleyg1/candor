@@ -485,3 +485,79 @@ func TestUnannotatedFnNoMemoryNoneAttr(t *testing.T) {
 		t.Error("unannotated function must not get memory(none) attribute")
 	}
 }
+
+// ── LLVM-2: result<T,E> named struct tests ────────────────────────────────────
+
+// TestResultTypeNamedStruct verifies that result<str,str> emits a named struct
+// declaration in the IR header, not an opaque ptr.
+func TestResultTypeNamedStruct(t *testing.T) {
+	out := compileLL(t, `
+fn maybe(flag: bool) -> result<str, str> {
+    if flag { return ok("yes") }
+    return err("no")
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `%_cnd_result_str_str = type`)
+	assertContains(t, out, `i1`)
+}
+
+// TestResultOkConstructor verifies that ok(v) emits insertvalue sequences.
+func TestResultOkConstructor(t *testing.T) {
+	out := compileLL(t, `
+fn wrap(s: str) -> result<str, str> {
+    return ok(s)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `insertvalue %_cnd_result_str_str zeroinitializer, i1 1, 0`)
+	assertContains(t, out, `insertvalue %_cnd_result_str_str`)
+}
+
+// TestResultErrConstructor verifies that err(e) emits insertvalue with discriminant 0.
+func TestResultErrConstructor(t *testing.T) {
+	out := compileLL(t, `
+fn fail(s: str) -> result<str, str> {
+    return err(s)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `insertvalue %_cnd_result_str_str zeroinitializer, i1 0, 0`)
+}
+
+// TestResultMatchExtractvalue verifies that match on result<T,E> uses extractvalue
+// to read the discriminant and branch, not a ptr dereference.
+func TestResultMatchExtractvalue(t *testing.T) {
+	out := compileLL(t, `
+fn unwrap(r: result<str, str>) -> str {
+    return match r {
+        ok(v) => v
+        err(e) => "fallback"
+    }
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `extractvalue %_cnd_result_str_str`)
+	assertContains(t, out, `result.ok`)
+	assertContains(t, out, `result.err`)
+}
+
+// TestResultMustExtractvalue verifies that must{} on result<T,E> uses extractvalue.
+func TestResultMustExtractvalue(t *testing.T) {
+	out := compileLL(t, `
+fn run(r: result<i64, str>) -> i64 {
+    let v = r must { ok(n) => n   err(_) => 0 }
+    return v
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `extractvalue %_cnd_result_i64_str`)
+	assertContains(t, out, `must.ok`)
+	assertContains(t, out, `must.err`)
+}
+
+// TestResultI64TypeDecl verifies that result<i64,str> is declared as a named struct.
+func TestResultI64TypeDecl(t *testing.T) {
+	out := compileLL(t, `
+fn divide(a: i64, b: i64) -> result<i64, str> {
+    if b == 0 { return err("div by zero") }
+    return ok(a / b)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `%_cnd_result_i64_str = type { i1, i64, ptr }`)
+}
