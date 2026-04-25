@@ -111,6 +111,7 @@ const (
 	TokArrow     // ->
 	TokFatArrow  // =>
 	TokPipeArrow // |>
+	TokBar       // |  (used in ?|f error-transform propagation)
 	TokQuestion  // ?
 
 	// --- Directives (#word) ---
@@ -271,6 +272,7 @@ var tokenNames = map[TokenType]string{
 	TokArrow:     "->",
 	TokFatArrow:  "=>",
 	TokPipeArrow: "|>",
+	TokBar:       "|",
 	TokQuestion:  "?",
 	TokDirective: "Directive",
 	TokEOF:       "EOF",

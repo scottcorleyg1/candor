@@ -1691,6 +1691,9 @@ func (c *checker) inferExpr(expr parser.Expr, sc *scope, hint Type) (Type, error
 	case *parser.PropagateExpr:
 		return c.inferPropagateExpr(e, sc)
 
+	case *parser.PropagateTransformExpr:
+		return c.inferPropagateTransformExpr(e, sc)
+
 	case *parser.PipeExpr:
 		return c.inferPipeExpr(e, sc, hint)
 
@@ -2387,6 +2390,50 @@ func (c *checker) inferPropagateExpr(e *parser.PropagateExpr, sc *scope) (Type, 
 				gen.Params[1], retGen.Params[1])
 		}
 	}
+	return gen.Params[0], nil // yields T
+}
+
+// inferPropagateTransformExpr handles expr?|f — early-return with error transform.
+// The operand must be result<T, E>. f must be callable with E, returning E2.
+// The enclosing function must return result<T2, E2>. The expression yields T.
+func (c *checker) inferPropagateTransformExpr(e *parser.PropagateTransformExpr, sc *scope) (Type, error) {
+	operandType, err := c.checkExpr(e.X, sc, nil)
+	if err != nil {
+		return nil, err
+	}
+	gen, ok := operandType.(*GenType)
+	if !ok || gen.Con != "result" || len(gen.Params) != 2 {
+		return nil, c.errorf(e.QuestionTok, "?|f requires result<T, E> operand, got %s", operandType)
+	}
+	errT := gen.Params[1]
+
+	// Infer f as a function that accepts errT — hint helps lambdas infer param types.
+	fHint := &FnType{Params: []Type{errT}}
+	fType, err := c.checkExpr(e.F, sc, fHint)
+	if err != nil {
+		return nil, err
+	}
+	ft, isFn := fType.(*FnType)
+	if !isFn {
+		return nil, c.errorf(e.BarTok, "?|f requires f to be a function, got %s", fType)
+	}
+	E2 := ft.Ret
+
+	// Enclosing function must return result<_, E2>.
+	retGen, retOk := c.curRetType.(*GenType)
+	if !retOk || retGen.Con != "result" || len(retGen.Params) != 2 {
+		return nil, c.errorf(e.QuestionTok,
+			"?|f can only be used in a function returning result<T, E>, enclosing return type is %s",
+			c.curRetType)
+	}
+	if _, ok := Coerce(E2, retGen.Params[1]); !ok {
+		if !E2.Equals(retGen.Params[1]) {
+			return nil, c.errorf(e.BarTok,
+				"?|f: transform returns %s but enclosing function expects error type %s",
+				E2, retGen.Params[1])
+		}
+	}
+
 	return gen.Params[0], nil // yields T
 }
 

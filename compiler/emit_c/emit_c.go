@@ -2927,6 +2927,8 @@ func (e *emitter) emitExpr(expr parser.Expr, sb *strings.Builder) error {
 
 	case *parser.PropagateExpr:
 		return e.emitPropagateExpr(ex, sb)
+	case *parser.PropagateTransformExpr:
+		return e.emitPropagateTransformExpr(ex, sb)
 
 	case *parser.PipeExpr:
 		// |> desugars to fn(lhs). Apply the same direct-call vs fat-pointer
@@ -5808,6 +5810,47 @@ func (e *emitter) emitPropagateExpr(ex *parser.PropagateExpr, sb *strings.Builde
 	fmt.Fprintf(sb, "    %s %s = %s;\n", operandC, tmp, xb.String())
 	fmt.Fprintf(sb, "    if (!%s._ok) { %s _cnd_early = {0}; _cnd_early._err_val = %s._err_val; return _cnd_early; }\n",
 		tmp, retC, tmp)
+	if !okIsUnit {
+		fmt.Fprintf(sb, "    %s._ok_val;\n", tmp)
+	} else {
+		fmt.Fprintf(sb, "    (void)0;\n")
+	}
+	fmt.Fprintf(sb, "}))")
+	return nil
+}
+
+// emitPropagateTransformExpr emits the GCC statement expression for `expr?|f`.
+// On the err path it applies f to the error value before the early return,
+// allowing the error type to be converted at module boundaries.
+func (e *emitter) emitPropagateTransformExpr(ex *parser.PropagateTransformExpr, sb *strings.Builder) error {
+	operandType := e.res.ExprTypes[ex.X]
+	gen := operandType.(*typeck.GenType)
+
+	operandC, err := e.cType(operandType)
+	if err != nil {
+		return err
+	}
+	retC, err := e.cType(e.retType)
+	if err != nil {
+		return err
+	}
+
+	var xb strings.Builder
+	if err := e.emitExpr(ex.X, &xb); err != nil {
+		return err
+	}
+	var fb strings.Builder
+	if err := e.emitExpr(ex.F, &fb); err != nil {
+		return err
+	}
+
+	tmp := e.freshTmp()
+	okIsUnit := gen.Params[0].Equals(typeck.TUnit)
+
+	fmt.Fprintf(sb, "(__extension__ ({\n")
+	fmt.Fprintf(sb, "    %s %s = %s;\n", operandC, tmp, xb.String())
+	fmt.Fprintf(sb, "    if (!%s._ok) { %s _cnd_early = {0}; _cnd_early._err_val = (%s)(%s._err_val); return _cnd_early; }\n",
+		tmp, retC, fb.String(), tmp)
 	if !okIsUnit {
 		fmt.Fprintf(sb, "    %s._ok_val;\n", tmp)
 	} else {

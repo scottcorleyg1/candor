@@ -615,3 +615,33 @@ fn pipeline(s: str) -> result<str, str> {
 		t.Errorf("expected at least 2 prop.err labels, got:\n%s", out)
 	}
 }
+
+// ── ?|f error-transform propagation tests ────────────────────────────────────
+
+func TestPropagateTransformExtractvalue(t *testing.T) {
+	out := compileLL(t, `
+fn wrap_err(e: str) -> str pure { return str_concat("wrapped: ", e) }
+fn inner(s: str) -> result<i64, str> pure { return err(s) }
+fn outer(s: str) -> result<i64, str> pure {
+    let v = inner(s)?|wrap_err
+    return ok(v)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `extractvalue %_cnd_result_i64_str`)
+	assertContains(t, out, `prop.ok`)
+	assertContains(t, out, `prop.err`)
+	assertContains(t, out, `@wrap_err`)
+}
+
+func TestPropagateTransformRetInsertvalue(t *testing.T) {
+	out := compileLL(t, `
+fn pfx(e: str) -> str pure { return str_concat("pfx: ", e) }
+fn step(s: str) -> result<str, str> pure { return ok(s) }
+fn run(s: str) -> result<str, str> pure {
+    let v = step(s)?|pfx
+    return ok(v)
+}`)
+	t.Logf("LLVM IR:\n%s", out)
+	assertContains(t, out, `insertvalue %_cnd_result_str_str zeroinitializer, i1 0, 0`)
+	assertContains(t, out, `ret %_cnd_result_str_str`)
+}

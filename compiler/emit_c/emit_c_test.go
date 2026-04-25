@@ -1575,3 +1575,60 @@ fn bad(x: u32) -> str pure { return x |> takes_str }
 		t.Fatal("expected typeck error for |> with wrong argument type, got nil")
 	}
 }
+
+// ── ?|f error-transform propagation tests ────────────────────────────────────
+
+func TestPropagateTransformEmitsTransformedError(t *testing.T) {
+	src := `
+fn wrap_err(e: str) -> str pure { return str_concat("wrapped: ", e) }
+fn inner(s: str) -> result<i64, str> pure { return err(s) }
+fn outer(s: str) -> result<i64, str> pure {
+    let v = inner(s)?|wrap_err
+    return ok(v)
+}
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "wrap_err")
+	assertContains(t, out, "_err_val")
+	assertContains(t, out, "_cnd_early")
+	assertContains(t, out, "return _cnd_early")
+}
+
+func TestPropagateTransformSameErrorType(t *testing.T) {
+	src := `
+fn add_context(e: str) -> str pure { return str_concat("context: ", e) }
+fn step(s: str) -> result<str, str> pure { return ok(s) }
+fn run(s: str) -> result<str, str> pure {
+    let a = step(s)?|add_context
+    let b = step(a)?|add_context
+    return ok(b)
+}
+`
+	out := pipeline(t, src)
+	t.Logf("emitted C:\n%s", out)
+	assertContains(t, out, "add_context")
+}
+
+func TestPropagateTransformTypeckRejectsWrongTransformReturnType(t *testing.T) {
+	src := `
+fn bad_wrap(e: str) -> i64 pure { return 0 }
+fn inner(s: str) -> result<i64, str> pure { return err(s) }
+fn outer(s: str) -> result<i64, str> pure {
+    let v = inner(s)?|bad_wrap
+    return ok(v)
+}
+`
+	tokens, err := lexer.Tokenize("<test>", src)
+	if err != nil {
+		t.Fatalf("lex: %v", err)
+	}
+	file, err := parser.Parse("<test>", tokens)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	_, err = typeck.Check(file)
+	if err == nil {
+		t.Fatal("expected typeck error: transform return type i64 != enclosing error type str")
+	}
+}

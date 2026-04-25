@@ -548,6 +548,19 @@ type PropagateExpr struct {
 func (e *PropagateExpr) Pos() lexer.Token { return e.QuestionTok }
 func (e *PropagateExpr) exprNode()        {}
 
+// PropagateTransformExpr: expr?|f — extract ok(T) or early-return err(f(E)) from enclosing fn.
+// f is applied to the error value before the early return, allowing error type conversion.
+// The enclosing function must return result<T2, E2> where E2 is the return type of f.
+type PropagateTransformExpr struct {
+	X           Expr
+	QuestionTok lexer.Token
+	BarTok      lexer.Token
+	F           Expr // transform: fn(E) -> E2
+}
+
+func (e *PropagateTransformExpr) Pos() lexer.Token { return e.QuestionTok }
+func (e *PropagateTransformExpr) exprNode()        {}
+
 // PipeExpr: expr |> fn — left-to-right function application.
 // Desugars to fn(expr). Left-associative: a |> f |> g == g(f(a)).
 type PipeExpr struct {

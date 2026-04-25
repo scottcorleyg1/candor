@@ -1009,7 +1009,16 @@ func (p *parser) parsePostfixOnExpr(expr Expr) (Expr, error) {
 
 		case lexer.TokQuestion:
 			q := p.advance()
-			expr = &PropagateExpr{X: expr, QuestionTok: q}
+			if p.peek().Type == lexer.TokBar {
+				bar := p.advance()
+				f, err := p.parsePrimaryExpr()
+				if err != nil {
+					return nil, err
+				}
+				expr = &PropagateTransformExpr{X: expr, QuestionTok: q, BarTok: bar, F: f}
+			} else {
+				expr = &PropagateExpr{X: expr, QuestionTok: q}
+			}
 
 		case lexer.TokPipeArrow:
 			pipe := p.advance()

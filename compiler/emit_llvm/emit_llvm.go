@@ -1628,6 +1628,8 @@ func (em *llEmitter) emitExpr(e parser.Expr) (string, error) {
 		return em.emitMust(ee)
 	case *parser.PropagateExpr:
 		return em.emitPropagate(ee)
+	case *parser.PropagateTransformExpr:
+		return em.emitPropagateTransform(ee)
 	case *parser.ReturnExpr:
 		val, err := em.emitExpr(ee.Value)
 		if err != nil {
@@ -3211,6 +3213,100 @@ func (em *llEmitter) emitPropagate(e *parser.PropagateExpr) (string, error) {
 		em.wif(`ret %s %s`, llRetTy, r1)
 	} else {
 		// enclosing fn doesn't return result — emit unreachable (typeck already caught this)
+		em.wi(`unreachable`)
+	}
+
+	// ok path — extract value and continue
+	em.lbl(okLbl)
+	var okVal string
+	if isVoidTy(okTy) {
+		okVal = "undef"
+		em.wif(`br label %%%s`, contLbl)
+	} else {
+		okVal = em.fresh()
+		em.wif(`%s = extractvalue %s %s, 1`, okVal, llResTy, resVal)
+		em.wif(`br label %%%s`, contLbl)
+	}
+
+	em.lbl(contLbl)
+	return okVal, nil
+}
+
+// emitPropagateTransform emits expr?|f as:
+//
+//	%res   = <emit expr>
+//	%disc  = extractvalue %result_T_E %res, 0
+//	br i1 %disc, label %prop.ok, label %prop.err
+//	prop.err:  %e  = extractvalue ... %res, 2
+//	           %e2 = call f(%e)
+//	           ret result wrapping err(%e2)
+//	prop.ok:   %val = extractvalue ... %res, 1  → continue
+func (em *llEmitter) emitPropagateTransform(e *parser.PropagateTransformExpr) (string, error) {
+	resVal, err := em.emitExpr(e.X)
+	if err != nil {
+		return "", err
+	}
+	operandTy, ok := em.res.ExprTypes[e.X].(*typeck.GenType)
+	if !ok || operandTy.Con != "result" || len(operandTy.Params) < 2 {
+		return resVal, nil
+	}
+	llResTy := em.llType(operandTy)
+	okTy := operandTy.Params[0]
+	errTy := operandTy.Params[1]
+
+	okLbl := em.freshBlk("prop.ok")
+	errLbl := em.freshBlk("prop.err")
+	contLbl := em.freshBlk("prop.cont")
+
+	discReg := em.fresh()
+	em.wif(`%s = extractvalue %s %s, 0`, discReg, llResTy, resVal)
+	em.wif(`br i1 %s, label %%%s, label %%%s`, discReg, okLbl, errLbl)
+
+	// err path — apply f to the error value, then wrap and return early
+	em.lbl(errLbl)
+	errVal := em.fresh()
+	em.wif(`%s = extractvalue %s %s, 2`, errVal, llResTy, resVal)
+
+	// Emit the call to f with errVal as argument.
+	// f is an expression (named fn or lambda); emit it as a call.
+	fVal, ferr := em.emitExpr(e.F)
+	if ferr != nil {
+		return "", ferr
+	}
+	fTy, isFn := em.res.ExprTypes[e.F].(*typeck.FnType)
+
+	var e2Val string
+	if isFn && fTy != nil {
+		e2Ty := fTy.Ret
+		e2Val = em.fresh()
+		if id, ok2 := e.F.(*parser.IdentExpr); ok2 {
+			em.wif(`%s = call %s @%s(%s %s)`, e2Val, em.llType(e2Ty), id.Tok.Lexeme, em.llType(errTy), errVal)
+		} else {
+			// Lambda or complex expression — call via fat pointer
+			fnSlot := em.fresh()
+			envSlot := em.fresh()
+			fnPtr := em.fresh()
+			envPtr := em.fresh()
+			em.wif(`%s = getelementptr { ptr, ptr }, ptr %s, i32 0, i32 0`, fnSlot, fVal)
+			em.wif(`%s = getelementptr { ptr, ptr }, ptr %s, i32 0, i32 1`, envSlot, fVal)
+			em.wif(`%s = load ptr, ptr %s`, fnPtr, fnSlot)
+			em.wif(`%s = load ptr, ptr %s`, envPtr, envSlot)
+			em.wif(`%s = call %s %s(%s %s, ptr %s)`, e2Val, em.llType(e2Ty), fnPtr, em.llType(errTy), errVal, envPtr)
+		}
+	} else {
+		e2Val = errVal // fallback: pass through unchanged
+	}
+
+	retGen, isRetResult := em.retType.(*typeck.GenType)
+	if isRetResult && retGen.Con == "result" && len(retGen.Params) >= 2 {
+		llRetTy := em.llType(em.retType)
+		e2Ty := retGen.Params[1]
+		r0 := em.fresh()
+		r1 := em.fresh()
+		em.wif(`%s = insertvalue %s zeroinitializer, i1 0, 0`, r0, llRetTy)
+		em.wif(`%s = insertvalue %s %s, %s %s, 2`, r1, llRetTy, r0, em.llType(e2Ty), e2Val)
+		em.wif(`ret %s %s`, llRetTy, r1)
+	} else {
 		em.wi(`unreachable`)
 	}
 

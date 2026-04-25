@@ -293,7 +293,7 @@ func (l *lexer) scanOne() error {
 			l.advance()
 			l.emit(TokPipeArrow, "|>", line, col)
 		} else {
-			return l.errorf(line, col, "unexpected character '|'; did you mean '|>'?")
+			l.emit(TokBar, "|", line, col)
 		}
 	case '"':
 		return l.scanString()
